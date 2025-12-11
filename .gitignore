@@ -1,0 +1,14 @@
+# 输出的文件
+*.log
+*.exe
+*.png
+*.pdf
+*.html
+*.md
+*.h5
+*.pth
+*.json
+*.zip
+*.sh
+*.txt
+*.jpeg
