@@ -12,3 +12,5 @@
 *.sh
 *.txt
 *.jpeg
+*.xml
+*.iml
