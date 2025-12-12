@@ -15,9 +15,9 @@ root = '/home/yogsothoth/DataSet/mit-bih-arrhythmia-database-1.0.0/'
 #              '116', '117', '119', '121', '122', '123', '124', '200', '201', '202', '203', '205', '208',
 #              '210', '212', '213', '214', '215', '217', '219', '220', '221', '222', '223', '228', '230',
 #              '231', '232', '233', '234']
-record_number = '212'
-start_sample = 4000
-end_sample = 8000
+record_number = '107'
+start_sample = 8000
+end_sample = 12000
 
 
 def bandpass_filter(data, fs=360, lowcut=0.5, highcut=40.0, order=5):

@@ -7,7 +7,8 @@ import wfdb
 # Set default font for better English display
 plt.rcParams['font.sans-serif'] = ['Arial', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False  # Correct minus sign display
-num_seq= '100'
+root = '/home/yogsothoth/DataSet/mit-bih-arrhythmia-database-1.0.0/'
+numberSet= ['100']
 
 
 class PanTomkinsQRSDetector:
@@ -57,10 +58,10 @@ class PanTomkinsQRSDetector:
         filtered_signal = scipy_signal.filtfilt(b, a, signal_data)
 
         # # 为了减少漏检，添加原始信号的加权
-        # original_weight = 0.3  # 原始信号权重
-        # filtered_weight = 0.7  # 滤波信号权重
-        # combined_signal = original_weight * signal_data + filtered_weight * filtered_signal
-        combined_signal = filtered_signal
+        original_weight = 0.3  # 原始信号权重
+        filtered_weight = 0.7  # 滤波信号权重
+        combined_signal = original_weight * signal_data + filtered_weight * filtered_signal
+        # combined_signal = filtered_signal
         return combined_signal
 
     def derivative(self, signal_data):
@@ -151,236 +152,238 @@ class PanTomkinsQRSDetector:
 
     def _threshold_detection(self):
         """
-        优化的阈值检测算法
-        使用自适应双阈值检测QRS波，包含初始化阶段和精确定位
-
-        返回:
-            peaks: 检测到的峰值位置
+        简单的阈值检测算法
+        使用固定阈值和基本的不应期检测QRS波
         """
-        # 初始化阶段 - 使用前2秒信号建立初始阈值
-        init_samples = int(2 * self.fs)
-        if len(self.integrated_signal) < init_samples:
-            init_samples = len(self.integrated_signal)
+        if self.integrated_signal is None:
+            return []
 
-        init_signal = self.integrated_signal[:init_samples]
-        # 降低初始阈值，对小R波更敏感
-        init_threshold = np.mean(init_signal) + 2.0 * np.std(init_signal)
+        # 设置固定阈值 - 基于信号的统计特性
+        signal_mean = np.mean(self.integrated_signal)
+        signal_std = np.std(self.integrated_signal)
+        threshold = signal_mean + 1.5 * signal_std  # 阈值设为均值+1.5倍标准差
 
-        # 噪声和信号阈值初始化
-        signal_peak = init_threshold
-        noise_peak = np.mean(init_signal)
-        threshold = init_threshold
-
-        # 优化不应期参数 - 合理设置以平衡检测效果
-        rr_interval_min = int(0.2 * self.fs)   # 200ms (支持300bpm)
-        rr_interval_max = int(2.0 * self.fs)   # 2000ms (30bpm下限)
+        # 设置不应期（防止重复检测）- 200ms
+        refractory_period = int(0.2 * self.fs)
 
         peaks = []
-        searchback_threshold = 0.25  # 适度降低回溯阈值，提高回溯敏感性
 
-        # 初始化标志 - 前几个心跳用于学习
-        learning_beats = 5  # 合理的学习时间，充分适应信号
-        learning_count = 0
-
+        # 遍历信号寻找超过阈值的峰值
         for i in range(len(self.integrated_signal)):
             current_value = self.integrated_signal[i]
 
             # 检查是否超过阈值
             if current_value > threshold:
                 # 检查是否在不应期内
-                if len(peaks) == 0 or (i - peaks[-1]) > rr_interval_min:
-                    # 检查是否过长的间隔 (可能漏检)
-                    if len(peaks) > 0 and (i - peaks[-1]) > rr_interval_max:
-                        # 触发回溯搜索
-                        missed_peaks = self._searchback_detection(peaks[-1], i, searchback_threshold * threshold)
-                        peaks.extend(missed_peaks)
+                if len(peaks) == 0 or (i - peaks[-1]) > refractory_period:
+                    # 在小窗口内寻找真正的峰值
+                    search_window = min(10, len(self.integrated_signal) - i - 1)
+                    local_peak = i
 
-                    # 添加当前峰值
-                    peaks.append(i)
+                    for j in range(max(0, i-5), min(len(self.integrated_signal), i+search_window+1)):
+                        if self.integrated_signal[j] > self.integrated_signal[local_peak]:
+                            local_peak = j
 
-                    # 学习阶段使用更高的学习率
-                    if learning_count < learning_beats:
-                        learning_factor = 0.5
-                        learning_count += 1
-                    else:
-                        learning_factor = 0.125  # 稳定后使用较小学习率
+                    # 添加找到的峰值
+                    if local_peak not in peaks:
+                        peaks.append(local_peak)
 
-                    signal_peak = learning_factor * current_value + (1 - learning_factor) * signal_peak
-                else:
-                    # 在不应期内，视为噪声
-                    noise_peak = 0.25 * current_value + 0.75 * noise_peak
-
-                # 动态调整阈值更新策略 - 合理的阈值调整以平衡检测效果
-                if learning_count < learning_beats:
-                    # 学习阶段：更积极的阈值调整
-                    threshold_factor = 0.35  # 提高学习因子，更敏感
-                else:
-                    # 稳定阶段：保守但仍保持敏感性
-                    threshold_factor = 0.25  # 适度保守的阈值因子
-
-                threshold = noise_peak + threshold_factor * (signal_peak - noise_peak)
-            else:
-                # 更新噪声峰值 - 适度适应噪声变化
-                if current_value > noise_peak:
-                    noise_peak = 0.2 * current_value + 0.8 * noise_peak  # 提高噪声学习率
-
-                # 在长时间没有检测到峰值时，逐渐降低阈值
-                if len(peaks) > 0 and (i - peaks[-1]) > int(1.0 * self.fs):  # 超过1秒无峰值
-                    threshold *= 0.99  # 每个样本降低阈值1%
-
-        # 最终回溯搜索 - 检查最后一个长间隔
-        if len(peaks) > 0 and (len(self.integrated_signal) - peaks[-1]) > rr_interval_max * 0.8:
-            missed_peaks = self._searchback_detection(peaks[-1], len(self.integrated_signal),
-                                                   searchback_threshold * threshold)
-            peaks.extend(missed_peaks)
-
-        # 全局回溯搜索 - 检查所有间隔是否合理
-        if len(peaks) > 2:
-            additional_peaks = []
-            for i in range(len(peaks) - 1):
-                interval = peaks[i+1] - peaks[i]
-                if interval > rr_interval_max:  # 间隔过长，可能存在漏检
-                    missed_peaks = self._searchback_detection(peaks[i], peaks[i+1],
-                                                           searchback_threshold * threshold)
-                    additional_peaks.extend(missed_peaks)
-
-            # 合并并排序所有峰值
-            all_peaks = sorted(peaks + additional_peaks)
-        else:
-            all_peaks = peaks
-
-        # R波峰值精确定位
-        refined_peaks = self._refine_peak_locations(all_peaks)
-
-        return refined_peaks
-
-    def _searchback_detection(self, start_idx, end_idx, threshold):
-        """
-        改进的回溯搜索检测遗漏的QRS波
-        """
-        search_start = start_idx + int(0.15 * self.fs)  # 缩短搜索起始延迟
-        search_end = min(end_idx, start_idx + int(1.5 * self.fs))  # 适当扩大搜索范围
-
-        if search_start >= search_end:
-            return []
-
-        search_segment = self.integrated_signal[search_start:search_end]
-        if len(search_segment) == 0:
-            return []
-
-        # 寻找局部最大值 - 使用合理的条件
-        peaks = []
-        min_peak_distance = int(0.25 * self.fs)  # 缩短最小峰值间距
-        local_threshold = threshold * 0.7  # 降低回溯搜索阈值
-
-        # 使用改进的峰值检测 - 考虑相对高度
-        for i in range(2, len(search_segment) - 2):
-            # 检查是否为局部最大值
-            if (search_segment[i] > local_threshold and
-                search_segment[i] > search_segment[i-1] and
-                search_segment[i] > search_segment[i+1] and
-                search_segment[i] > search_segment[i-2] and
-                search_segment[i] > search_segment[i+2]):
-
-                peak_idx = search_start + i
-
-                # 检查与已有峰值的距离
-                if not peaks or (peak_idx - peaks[-1]) > min_peak_distance:
-                    # 确保峰值足够显著
-                    window_size = min(20, i, len(search_segment) - i - 1)
-                    window_start = max(0, i - window_size)
-                    window_end = min(len(search_segment), i + window_size + 1)
-                    local_window = search_segment[window_start:window_end]
-
-                    if len(local_window) > 0 and search_segment[i] > np.mean(local_window) * 1.2:
-                        peaks.append(peak_idx)
-
-        return peaks
-
-    def _refine_peak_locations(self, peak_indices):
-        """
-        将积分信号上的峰值位置精确定位到原始ECG信号的R波峰值
-        """
+        # 简单的峰值精确定位 - 在原始滤波信号上找到最大值
         refined_peaks = []
+        search_window = int(0.03 * self.fs)  # 30ms搜索窗口
 
-        for peak_idx in peak_indices:
-            # 在原始信号上搜索R波峰值
-            search_window = int(0.05 * self.fs)  # ±50ms搜索窗口
-            search_start = max(0, peak_idx - search_window)
-            search_end = min(len(self.filtered_signal),
-                           peak_idx + search_window)
+        for peak in peaks:
+            search_start = max(0, peak - search_window)
+            search_end = min(len(self.filtered_signal), peak + search_window)
 
             if search_start < search_end:
                 search_segment = self.filtered_signal[search_start:search_end]
                 if len(search_segment) > 0:
-                    # 寻找局部最大值
                     local_max_idx = np.argmax(search_segment) + search_start
                     refined_peaks.append(local_max_idx)
                 else:
-                    refined_peaks.append(peak_idx)
+                    refined_peaks.append(peak)
             else:
-                refined_peaks.append(peak_idx)
+                refined_peaks.append(peak)
 
         return refined_peaks
 
-    def plot_results(self, signal_data, start_idx=0, num_samples=1000):
-        """
-        绘制QRS检测结果
+    # def _threshold_detection(self):
+    #     """
+    #     优化的阈值检测算法（已注释 - 现在使用下面的简单版本）
+    #     使用自适应双阈值检测QRS波，包含初始化阶段和精确定位
 
-        参数:
-            signal_data: 原始ECG信号
-            start_idx: 起始索引
-            num_samples: 显示的样本数
-        """
-        end_idx = min(start_idx + num_samples, len(signal_data))
+    #     返回:
+    #         peaks: 检测到的峰值位置
+    #     """
+    #     # ============================================
+    #     # 原来的复杂阈值检测算法（已完全注释）
+    #     # ============================================
+    #     # # 初始化阶段 - 使用前2秒信号建立初始阈值
+    #     # init_samples = int(2 * self.fs)
+    #     # if len(self.integrated_signal) < init_samples:
+    #     #     init_samples = len(self.integrated_signal)
 
-        fig, axes = plt.subplots(5, 1, figsize=(15, 12))
+    #     # init_signal = self.integrated_signal[:init_samples]
+    #     # # 降低初始阈值，对小R波更敏感
+    #     # init_threshold = np.mean(init_signal) + 2.0 * np.std(init_signal)
 
-        # 原始信号
-        axes[0].plot(signal_data[start_idx:end_idx], 'b-', linewidth=1)
-        axes[0].set_title('Original ECG Signal')
-        axes[0].set_ylabel('Amplitude')
-        axes[0].grid(True, alpha=0.3)
+    #     # # 噪声和信号阈值初始化
+    #     # signal_peak = init_threshold
+    #     # noise_peak = np.mean(init_signal)
+    #     # threshold = init_threshold
 
-        # 带通滤波后信号
-        if self.filtered_signal is not None:
-            axes[1].plot(self.filtered_signal[start_idx:end_idx], 'g-', linewidth=1)
-            axes[1].set_title('Bandpass Filtered Signal (0.5-40 Hz)')
-            axes[1].set_ylabel('Amplitude')
-            axes[1].grid(True, alpha=0.3)
+    #     # # 优化不应期参数 - 合理设置以平衡检测效果
+    #     # rr_interval_min = int(0.2 * self.fs)   # 200ms (支持300bpm)
+    #     # rr_interval_max = int(2.0 * self.fs)   # 2000ms (30bpm下限)
 
-        # 微分后信号
-        if self.differentiated_signal is not None:
-            axes[2].plot(self.differentiated_signal[start_idx:end_idx], 'r-', linewidth=1)
-            axes[2].set_title('Differentiated Signal')
-            axes[2].set_ylabel('Amplitude')
-            axes[2].grid(True, alpha=0.3)
+    #     # peaks = []
+    #     # searchback_threshold = 0.25  # 适度降低回溯阈值，提高回溯敏感性
 
-        # 平方后信号
-        if self.squared_signal is not None:
-            axes[3].plot(self.squared_signal[start_idx:end_idx], 'm-', linewidth=1)
-            axes[3].set_title('Squared Signal')
-            axes[3].set_ylabel('Amplitude')
-            axes[3].grid(True, alpha=0.3)
+    #     # # 初始化标志 - 前几个心跳用于学习
+    #     # learning_beats = 5  # 合理的学习时间，充分适应信号
+    #     # learning_count = 0
 
-        # 移动窗口积分后信号和QRS检测
-        if self.integrated_signal is not None:
-            axes[4].plot(self.integrated_signal[start_idx:end_idx], 'c-', linewidth=1.5, label='积分信号')
+    #     # for i in range(len(self.integrated_signal)):
+    #     #     current_value = self.integrated_signal[i]
 
-            # 标记检测到的QRS波
-            for peak in self.qrs_peaks:
-                if start_idx <= peak < end_idx:
-                    axes[4].plot(peak - start_idx, self.integrated_signal[peak], 'ro',
-                               markersize=8, label='QRS Detection')
+    #     #     # 检查是否超过阈值
+    #     #     if current_value > threshold:
+    #     #         # 检查是否在不应期内
+    #     #         if len(peaks) == 0 or (i - peaks[-1]) > rr_interval_min:
+    #     #             # 检查是否过长的间隔 (可能漏检)
+    #     #             if len(peaks) > 0 and (i - peaks[-1]) > rr_interval_max:
+    #     #                 # 触发回溯搜索
+    #     #                 missed_peaks = self._searchback_detection(peaks[-1], i, searchback_threshold * threshold)
+    #     #                 peaks.extend(missed_peaks)
 
-            axes[4].set_title('Moving Window Integration Signal and QRS Detection Results')
-            axes[4].set_xlabel('Sample Index')
-            axes[4].set_ylabel('Amplitude')
-            axes[4].legend()
-            axes[4].grid(True, alpha=0.3)
+    #     #             # 添加当前峰值
+    #     #             peaks.append(i)
 
-        plt.tight_layout()
-        plt.show()
+    #     #             # 学习阶段使用更高的学习率
+    #     #             if learning_count < learning_beats:
+    #     #                 learning_factor = 0.5
+    #     #                 learning_count += 1
+    #     #             else:
+    #     #                 learning_factor = 0.125  # 稳定后使用较小学习率
+
+    #     #             signal_peak = learning_factor * current_value + (1 - learning_factor) * signal_peak
+    #     #         else:
+    #     #             # 在不应期内，视为噪声
+    #     #             noise_peak = 0.25 * current_value + 0.75 * noise_peak
+
+    #     #         # 动态调整阈值更新策略 - 合理的阈值调整以平衡检测效果
+    #     #         if learning_count < learning_beats:
+    #     #             # 学习阶段：更积极的阈值调整
+    #     #             threshold_factor = 0.35  # 提高学习因子，更敏感
+    #     #         else:
+    #     #             # 稳定阶段：保守但仍保持敏感性
+    #     #             threshold_factor = 0.25  # 适度保守的阈值因子
+
+    #     #         threshold = noise_peak + threshold_factor * (signal_peak - noise_peak)
+    #     #     else:
+    #     #         # 更新噪声峰值 - 适度适应噪声变化
+    #     #         if current_value > noise_peak:
+    #     #             noise_peak = 0.2 * current_value + 0.8 * noise_peak  # 提高噪声学习率
+
+    #     #         # 在长时间没有检测到峰值时，逐渐降低阈值
+    #     #         if len(peaks) > 0 and (i - peaks[-1]) > int(1.0 * self.fs):  # 超过1秒无峰值
+    #     #             threshold *= 0.99  # 每个样本降低阈值1%
+
+    #     # # 最终回溯搜索 - 检查最后一个长间隔
+    #     # if len(peaks) > 0 and (len(self.integrated_signal) - peaks[-1]) > rr_interval_max * 0.8:
+    #     #     missed_peaks = self._searchback_detection(peaks[-1], len(self.integrated_signal),
+    #     #                                            searchback_threshold * threshold)
+    #     #     peaks.extend(missed_peaks)
+
+    #     # # 全局回溯搜索 - 检查所有间隔是否合理
+    #     # if len(peaks) > 2:
+    #     #     additional_peaks = []
+    #     #     for i in range(len(peaks) - 1):
+    #     #         interval = peaks[i+1] - peaks[i]
+    #     #         if interval > rr_interval_max:  # 间隔过长，可能存在漏检
+    #     #             missed_peaks = self._searchback_detection(peaks[i], peaks[i+1],
+    #     #                                                    searchback_threshold * threshold)
+    #     #             additional_peaks.extend(missed_peaks)
+
+    #     #     # 合并并排序所有峰值
+    #     #     all_peaks = sorted(peaks + additional_peaks)
+    #     # else:
+    #     #     all_peaks = peaks
+
+    #     # # R波峰值精确定位
+    #     # refined_peaks = self._refine_peak_locations(all_peaks)
+
+    #     # return refined_peaks
+
+    # # def _searchback_detection(self, start_idx, end_idx, threshold):
+    # #     """
+    # #     改进的回溯搜索检测遗漏的QRS波
+    # #     """
+    # #     search_start = start_idx + int(0.15 * self.fs)  # 缩短搜索起始延迟
+    # #     search_end = min(end_idx, start_idx + int(1.5 * self.fs))  # 适当扩大搜索范围
+
+    # #     if search_start >= search_end:
+    # #         return []
+
+    # #     search_segment = self.integrated_signal[search_start:search_end]
+    # #     if len(search_segment) == 0:
+    # #         return []
+
+    # #     # 寻找局部最大值 - 使用合理的条件
+    # #     peaks = []
+    # #     min_peak_distance = int(0.25 * self.fs)  # 缩短最小峰值间距
+    # #     local_threshold = threshold * 0.7  # 降低回溯搜索阈值
+
+    # #     # 使用改进的峰值检测 - 考虑相对高度
+    # #     for i in range(2, len(search_segment) - 2):
+    # #         # 检查是否为局部最大值
+    # #         if (search_segment[i] > local_threshold and
+    # #             search_segment[i] > search_segment[i-1] and
+    # #             search_segment[i] > search_segment[i+1] and
+    # #             search_segment[i] > search_segment[i-2] and
+    # #             search_segment[i] > search_segment[i+2]):
+
+    # #             peak_idx = search_start + i
+
+    # #             # 检查与已有峰值的距离
+    # #             if not peaks or (peak_idx - peaks[-1]) > min_peak_distance:
+    # #                 # 确保峰值足够显著
+    # #                 window_size = min(20, i, len(search_segment) - i - 1)
+    # #                 window_start = max(0, i - window_size)
+    # #                 window_end = min(len(search_segment), i + window_size + 1)
+    # #                 local_window = search_segment[window_start:window_end]
+
+    # #                 if len(local_window) > 0 and search_segment[i] > np.mean(local_window) * 1.2:
+    # #                     peaks.append(peak_idx)
+
+    # #     return peaks
+
+    # # def _refine_peak_locations(self, peak_indices):
+    # #     """
+    # #     将积分信号上的峰值位置精确定位到原始ECG信号的R波峰值
+    # #     """
+    # #     refined_peaks = []
+
+    # #     for peak_idx in peak_indices:
+    # #         # 在原始信号上搜索R波峰值
+    # #         search_window = int(0.05 * self.fs)  # ±50ms搜索窗口
+    # #         search_start = max(0, peak_idx - search_window)
+    # #         search_end = min(len(self.filtered_signal),
+    # #                        peak_idx + search_window)
+
+    # #         if search_start < search_end:
+    # #             search_segment = self.filtered_signal[search_start:search_end]
+    # #             if len(search_segment) > 0:
+    # #                 # 寻找局部最大值
+    # #                 local_max_idx = np.argmax(search_segment) + search_start
+    # #                 refined_peaks.append(local_max_idx)
+    # #             else:
+    # #                 refined_peaks.append(peak_idx)
+    # #         else:
+    # #             refined_peaks.append(peak_idx)
+
+    # #     return refined_peaks
 
     def calculate_heart_rate(self):
         """
@@ -402,7 +405,7 @@ class PanTomkinsQRSDetector:
 
         return heart_rate_bpm, rr_intervals
 
-    def plot_enhanced_results(self, signal_data, start_idx=0, num_samples=2000):
+    def plot_results(self, signal_data, start_idx=0, num_samples=2000):
         """
         绘制增强的QRS检测结果，包含详细的处理步骤可视化
 
@@ -499,7 +502,7 @@ class PanTomkinsQRSDetector:
             rr_intervals = np.diff(self.qrs_peaks) * 1000 / self.fs
             heart_rate, _ = self.calculate_heart_rate()
 
-            stats_text = f"""📊 Detection Statistics
+            stats_text = f"""Detection Statistics
 
 R-wave Detected: {len(self.qrs_peaks)}
 Average Heart Rate: {heart_rate:.1f} bpm
@@ -519,7 +522,7 @@ Algorithm Parameters:
   Dynamic Decay: Gradual threshold reduction
 """
         else:
-            stats_text = "❌ Detection Failed\nInsufficient R-waves"
+            stats_text = "Detection Failed\nInsufficient R-waves"
 
         ax6.text(0.1, 0.9, stats_text, transform=ax6.transAxes, fontsize=10,
                 verticalalignment='top', fontfamily='monospace',
@@ -530,43 +533,66 @@ Algorithm Parameters:
 
 
 def main():
-    """
-    主函数：读取ECG数据并应用Pan-Tomkins算法
-    """
+    # """
+    # 主函数：读取ECG数据并应用Pan-Tomkins算法
+    # """
+    # print("初始化Pan-Tomkins QRS检测器...")
+    #
+    # # 创建QRS检测器实例
+    # qrs_detector = PanTomkinsQRSDetector(fs=360)
+    #
+    # # 读取数据文件
+    # data_path = '/home/yogsothoth/DataSet/old_dataset/mit-bih-dataset/ecg_'+ num_seq + '.txt'
+    #
+    # print(f"读取ECG数据: {data_path}")
+    #
+    # # 读取数据，跳过行号前缀
+    # data = []
+    # with open(data_path, 'r') as file:
+    #     for line in file:
+    #         # 移除行号前缀，只保留数值部分
+    #         if '→' in line:
+    #             numeric_part = line.split('→')[1].strip()
+    #         else:
+    #             numeric_part = line.strip()
+    #
+    #         if numeric_part:
+    #             # 分割两列数据
+    #             parts = numeric_part.split()
+    #             if len(parts) >= 2:
+    #                 data.append([float(parts[0]), float(parts[1])])
+    #
+    # # 转换为numpy数组
+    # data = np.array(data)
+    #
+    # # 分离第一列和第二列信号
+    # signal1 = data[:, 0]
+    # signal2 = data[:, 1]
+
+    num = numberSet[0]
+
+    # 加载数据文件
+    print("正在读取 " + num + " 号心电数据文件...")
+    input_data = wfdb.rdrecord(root + num)
+    sig_name = input_data.sig_name
+    signal1 = wfdb.rdrecord(root + num, channel_names=[sig_name[0]]).p_signal.flatten()
+    signal2 = wfdb.rdrecord(root + num, channel_names=[sig_name[1]]).p_signal.flatten()
+
+    print(f"数据加载完成: {signal1.shape}, {signal2.shape}")
+
+    # 加载标注文件
+    print("正在读取 " + num + " 号心电标注文件...")
+    annotation = wfdb.rdann(root + num, 'atr')
+    fs = annotation.fs
+    ann_len = annotation.ann_len
+    sig_sample = annotation.sample
+    sig_symbol = annotation.symbol
+    for key in annotation.__dict__:
+        print(key, ":", annotation.__dict__[key])
+
     print("初始化Pan-Tomkins QRS检测器...")
-
     # 创建QRS检测器实例
-    qrs_detector = PanTomkinsQRSDetector(fs=360)
-
-    # 读取数据文件
-    data_path = 'mit-bih-dataset/ecg_'+ num_seq + '.txt'
-
-    print(f"读取ECG数据: {data_path}")
-
-    # 读取数据，跳过行号前缀
-    data = []
-    with open(data_path, 'r') as file:
-        for line in file:
-            # 移除行号前缀，只保留数值部分
-            if '→' in line:
-                numeric_part = line.split('→')[1].strip()
-            else:
-                numeric_part = line.strip()
-
-            if numeric_part:
-                # 分割两列数据
-                parts = numeric_part.split()
-                if len(parts) >= 2:
-                    data.append([float(parts[0]), float(parts[1])])
-
-    # 转换为numpy数组
-    data = np.array(data)
-
-    # 分离第一列和第二列信号
-    signal1 = data[:, 0]
-    signal2 = data[:, 1]
-
-    print(f"数据加载完成: {data.shape}")
+    qrs_detector = PanTomkinsQRSDetector(fs=fs)
 
     # 对第一列信号进行QRS检测
     print("\n对第一列信号进行QRS检测...")
@@ -587,77 +613,30 @@ def main():
 
     # 绘制结果
     print("\n绘制第一列信号的QRS检测结果...")
-    qrs_detector.plot_enhanced_results(signal1, start_idx=0, num_samples=3000)
+    qrs_detector.plot_results(signal1, start_idx=0, num_samples=3000)
 
     print("\n绘制第二列信号的QRS检测结果...")
-    qrs_detector2.plot_enhanced_results(signal2, start_idx=0, num_samples=3000)
+    qrs_detector2.plot_results(signal2, start_idx=0, num_samples=3000)
 
     # 打印统计信息
     print("\n=== QRS检测统计信息 ===")
-    print(f"信号1 - QRS波数量: {len(qrs_peaks1)}")
+    print(f"信号1 - QRS波原始数量: {len(ann_len)}")
+    print(f"信号1 - QRS波检测数量: {len(qrs_peaks1)}")
     print(f"信号1 - 平均心率: {heart_rate1:.2f} bpm")
     if len(rr_intervals1) > 0:
         print(f"信号1 - R-R间期均值: {np.mean(rr_intervals1):.2f} ms")
         print(f"信号1 - R-R间期标准差: {np.std(rr_intervals1):.2f} ms")
 
-    print(f"\n信号2 - QRS波数量: {len(qrs_peaks2)}")
+    print(f"\n信号2 - QRS波原始数量: {len(ann_len)}")
+    print(f"信号2 - QRS波检测数量: {len(qrs_peaks2)}")
     print(f"信号2 - 平均心率: {heart_rate2:.2f} bpm")
     if len(rr_intervals2) > 0:
         print(f"信号2 - R-R间期均值: {np.mean(rr_intervals2):.2f} ms")
         print(f"信号2 - R-R间期标准差: {np.std(rr_intervals2):.2f} ms")
 
-
-# def printnum():
-#     folder = 'mit-bih-arrhythmia-dataset/'
-#     # 加载数据集并进行预处理
-#     def loadData():
-#         # numberSet = ['100', '101', '103', '105', '106', '107', '108', '109', '111', '112', '113', '114', '115',
-#         #              '116', '117', '119', '121', '122', '123', '124', '200', '201', '202', '203', '205', '208',
-#         #              '210', '212', '213', '214', '215', '217', '219', '220', '221', '222', '223', '228', '230',
-#         #              '231', '232', '233', '234']
-#         numberSet = [num_seq]
-#         dataSet = []
-#
-#         # 读取心电数据和对应标签,并对数据进行小波去噪
-#         def getDataSet(number, X_data):
-#             # 读取心电数据记录
-#             print("正在读取 " + number + " 号心电数据...")
-#             record = wfdb.rdrecord(folder + number, channel_names=['MLII'])  # 源文件都放在ecg_data这个文件夹中了
-#             data = record.p_signal.flatten()
-#             # data=np.array(data)
-#
-#             # 获取心电数据记录中R波的位置和对应的标签
-#             annotation = wfdb.rdann(folder + number, 'atr')
-#             for key in annotation.__dict__:
-#                 print(key, ":", annotation.__dict__[key])
-#                 if type(annotation.__dict__[key]) == np.ndarray:
-#                     print(annotation.__dict__[key].shape)
-#             Rlocation = annotation.sample  # 对应位置
-#             print(Rlocation)
-#             Rclass = annotation.symbol  # 对应标签
-#             print(Rclass)
-#
-#             X_data.append(data)
-#
-#             return
-#
-#         for n in numberSet:
-#             getDataSet(n, dataSet)
-#         return dataSet
-#     dataSet = loadData()
-#     dataSet = np.array(dataSet)
-#     print(dataSet.shape)
-#     print("data ok!!!")
-
-
 if __name__ == "__main__":
     main()
     print("\n" + "="*60)
-    # printnum()
-
-
-    # test_optimization()
-
 
 
 

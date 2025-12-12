@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from torchsummary import summary
 
-model_type = 2
+model_type = 3
 load_model = f"./output_file/ecg_model_{model_type}.pth"
 
 # 设置matplotlib字体
@@ -18,7 +18,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"device:{device}")
 
-    X_train, Y_train, X_test, Y_test = loadData(dataset_type="ST-T")
+    X_train, Y_train, X_test, Y_test = loadData(dataset_type="MIT-BIH")
     X_train, Y_train, X_test, Y_test = X_train.to(device), Y_train.to(device), X_test.to(device), Y_test.to(device)
     print(X_train.shape, Y_train.shape, X_test.shape, Y_test.shape)
 
@@ -34,7 +34,7 @@ def main():
 
     # 创建模型
     model = Model(model_type=model_type, output_dim=len(kinds)).to(device)
-    model.load_state_dict(torch.load(load_model, map_location='cpu'))
+    model.load_state_dict(torch.load(load_model, map_location='cuda'))
     print(f"模型参数数量: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     # 模型信息
     summary(model, input_size=(1, pre_sample + past_sample))
@@ -63,7 +63,7 @@ def main():
             # 绘制前10个样本的波形图和概率
             # if 302 <= i < 308:
             # if probabilities.max() < 0.8 and search_result <= 10:
-            if true_class != predicted_class and search_result <= 10:
+            if true_class != predicted_class and search_result <= 20:
                 search_result += 1
                 # 创建图像
                 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))

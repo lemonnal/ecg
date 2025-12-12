@@ -23,7 +23,7 @@ root4 = '/home/yogsothoth/DataSet/mit-bih-noise-stress-test-database-1.0.0/'
 # 测试集在数据集中所占的比例
 # kinds = ['N', 'A', 'V', 'L', 'R']
 kinds = ['/', 'j', 'S', 'V', 'R', '~', '+', 'J', 'Q', 'a', 'F', 'x', 'L', 'A', 'E', 'N', 'e', '|', '"', 'f']
-pre_sample, past_sample = 150, 200
+pre_sample, past_sample = 100, 200
 
 def bandpass_filter(data, fs=360, lowcut=0.5, highcut=40.0, order=5):
     """
