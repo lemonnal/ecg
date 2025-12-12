@@ -2,13 +2,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal as scipy_signal
 import wfdb
-
+from tqdm import tqdm
 
 # Set default font for better English display
 plt.rcParams['font.sans-serif'] = ['Arial', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False  # Correct minus sign display
-root = '/home/yogsothoth/DataSet/mit-bih-arrhythmia-database-1.0.0/'
-numberSet= ['100']
+root = "/home/yogsothoth/DataSet/mit-bih-arrhythmia-database-1.0.0/"
+numberSet = ['100', '101', '103', '105', '106', '107', '108', '109', '111', '112', '113', '114', '115',
+                     '116', '117', '119', '121', '122', '123', '124', '200', '201', '202', '203', '205', '208',
+                     '210', '212', '213', '214', '215', '217', '219', '220', '221', '222', '223', '228', '230',
+                     '231', '232', '233', '234']
+
 
 
 class PanTomkinsQRSDetector:
@@ -48,8 +52,8 @@ class PanTomkinsQRSDetector:
         """
         # 设计带通滤波器 - 针对QRS波群优化频率范围，略微扩展频带
         nyquist = 0.5 * self.fs
-        low = 5.0 / nyquist      # 略微降低低频截止，保留更多QRS信息
-        high = 40.0 / nyquist    # 略微提高高频截止，保留高频成分
+        low = 0.5 / nyquist  # 略微降低低频截止，保留更多QRS信息
+        high = 40.0 / nyquist  # 略微提高高频截止，保留高频成分
 
         # 使用3阶Butterworth滤波器 - 平衡滤波效果和信号保留
         b, a = scipy_signal.butter(3, [low, high], btype='band')
@@ -81,8 +85,9 @@ class PanTomkinsQRSDetector:
         # f'(x) ≈ (f(x-2h) - 8f(x-h) + 8f(x+h) - f(x+2h)) / (12h)
         for i in range(2, len(signal_data) - 2):
             differentiated_signal[i] = (
-                -signal_data[i+2] + 8*signal_data[i+1] - 8*signal_data[i-1] + signal_data[i-2]
-            ) / 12
+                                               -signal_data[i + 2] + 8 * signal_data[i + 1] - 8 * signal_data[i - 1] +
+                                               signal_data[i - 2]
+                                       ) / 12
 
         return differentiated_signal
 
@@ -180,7 +185,7 @@ class PanTomkinsQRSDetector:
                     search_window = min(10, len(self.integrated_signal) - i - 1)
                     local_peak = i
 
-                    for j in range(max(0, i-5), min(len(self.integrated_signal), i+search_window+1)):
+                    for j in range(max(0, i - 5), min(len(self.integrated_signal), i + search_window + 1)):
                         if self.integrated_signal[j] > self.integrated_signal[local_peak]:
                             local_peak = j
 
@@ -428,10 +433,11 @@ class PanTomkinsQRSDetector:
         # 标记检测到的R波
         for i, peak in enumerate(self.qrs_peaks):
             if start_idx <= peak < end_idx:
-                ax1.plot(peak/self.fs, signal_data[peak], 'ro', markersize=8, label='Detected R-wave' if i == 0 else "")
+                ax1.plot(peak / self.fs, signal_data[peak], 'ro', markersize=8,
+                         label='Detected R-wave' if i == 0 else "")
                 # 添加R波编号
-                ax1.annotate(f'R{i+1}', (peak/self.fs, signal_data[peak]),
-                            xytext=(5, 5), textcoords='offset points', fontsize=8)
+                ax1.annotate(f'R{i + 1}', (peak / self.fs, signal_data[peak]),
+                             xytext=(5, 5), textcoords='offset points', fontsize=8)
 
         ax1.set_title('Optimized R-wave Detection Results')
         ax1.set_xlabel('Time (s)')
@@ -442,7 +448,8 @@ class PanTomkinsQRSDetector:
         # 2. 优化后的带通滤波信号
         ax2 = axes[0, 1]
         if self.filtered_signal is not None:
-            ax2.plot(time_axis, self.filtered_signal[start_idx:end_idx], 'g-', linewidth=1, label='Filtered Signal (5-15 Hz)')
+            ax2.plot(time_axis, self.filtered_signal[start_idx:end_idx], 'g-', linewidth=1,
+                     label='Filtered Signal (5-45 Hz)')
             ax2.set_title('Bandpass Filtered Signal - Optimized Frequency Range')
             ax2.set_xlabel('Time (s)')
             ax2.set_ylabel('Amplitude')
@@ -451,7 +458,8 @@ class PanTomkinsQRSDetector:
         # 3. 优化后的微分信号
         ax3 = axes[1, 0]
         if self.differentiated_signal is not None:
-            ax3.plot(time_axis, self.differentiated_signal[start_idx:end_idx], 'r-', linewidth=1, label='5-point Derivative')
+            ax3.plot(time_axis, self.differentiated_signal[start_idx:end_idx], 'r-', linewidth=1,
+                     label='5-point Derivative')
             ax3.set_title('Differentiated Signal - 5-point Central Difference')
             ax3.set_xlabel('Time (s)')
             ax3.set_ylabel('Amplitude')
@@ -460,12 +468,13 @@ class PanTomkinsQRSDetector:
         # 4. 积分信号和检测点
         ax4 = axes[1, 1]
         if self.integrated_signal is not None:
-            ax4.plot(time_axis, self.integrated_signal[start_idx:end_idx], 'c-', linewidth=1.5, label='Integrated Signal')
+            ax4.plot(time_axis, self.integrated_signal[start_idx:end_idx], 'c-', linewidth=1.5,
+                     label='Integrated Signal')
 
             # 标记积分信号上的检测点
             for peak in self.qrs_peaks:
                 if start_idx <= peak < end_idx:
-                    ax4.plot(peak/self.fs, self.integrated_signal[peak], 'ro', markersize=6)
+                    ax4.plot(peak / self.fs, self.integrated_signal[peak], 'ro', markersize=6)
 
             ax4.set_title('Moving Window Integration (80ms window)')
             ax4.set_xlabel('Time (s)')
@@ -485,7 +494,7 @@ class PanTomkinsQRSDetector:
             if np.any(mask):
                 ax5.bar(rr_times[mask], rr_intervals[mask], width=0.01, alpha=0.7, color='blue')
                 ax5.axhline(y=np.mean(rr_intervals), color='red', linestyle='--',
-                           label=f'Mean: {np.mean(rr_intervals):.1f} ms')
+                            label=f'Mean: {np.mean(rr_intervals):.1f} ms')
 
             ax5.set_title('RR Interval Variability')
             ax5.set_xlabel('Time (s)')
@@ -525,8 +534,8 @@ Algorithm Parameters:
             stats_text = "Detection Failed\nInsufficient R-waves"
 
         ax6.text(0.1, 0.9, stats_text, transform=ax6.transAxes, fontsize=10,
-                verticalalignment='top', fontfamily='monospace',
-                bbox=dict(boxstyle='round', facecolor='lightgray', alpha=0.8))
+                 verticalalignment='top', fontfamily='monospace',
+                 bbox=dict(boxstyle='round', facecolor='lightgray', alpha=0.8))
 
         plt.tight_layout()
         plt.show()
@@ -569,81 +578,128 @@ def main():
     # signal1 = data[:, 0]
     # signal2 = data[:, 1]
 
-    num = numberSet[0]
+    # MIT-BIH
+    # 导联方式 ['MLII', 'V1', 'V2', 'V4', 'V5']
+    total_annotation_num = {
+        "MLII": 0,
+        "V1": 0,
+        "V2": 0,
+        "V3": 0,
+        "V4": 0,
+        "V5": 0}
+    total_detection_num = {
+        "MLII": 0,
+        "V1": 0,
+        "V2": 0,
+        "V3": 0,
+        "V4": 0,
+        "V5": 0}
 
-    # 加载数据文件
-    print("正在读取 " + num + " 号心电数据文件...")
-    input_data = wfdb.rdrecord(root + num)
-    sig_name = input_data.sig_name
-    signal1 = wfdb.rdrecord(root + num, channel_names=[sig_name[0]]).p_signal.flatten()
-    signal2 = wfdb.rdrecord(root + num, channel_names=[sig_name[1]]).p_signal.flatten()
+    for num in tqdm(numberSet,
+                 desc="ECG",
+                 ncols=100,
+                 bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]\n',
+                 position=0,
+                 leave=True):
+        # 加载数据文件
+        print(f"file:{num}")
+        input_data = wfdb.rdrecord(root + num)
+        sig_name = input_data.sig_name
+        print(f"{sig_name}")
+        signal1 = wfdb.rdrecord(root + num, channel_names=[sig_name[0]]).p_signal.flatten()
+        signal2 = wfdb.rdrecord(root + num, channel_names=[sig_name[1]]).p_signal.flatten()
+        print(f"{signal1.shape}, {signal2.shape}")
 
-    print(f"数据加载完成: {signal1.shape}, {signal2.shape}")
+        # 加载标注文件
+        annotation = wfdb.rdann(root + num, 'atr')
+        fs = annotation.fs
+        ann_len = annotation.ann_len
+        sig_sample = annotation.sample
+        sig_symbol = annotation.symbol
+        total_annotation_num[sig_name[0]] += ann_len
+        total_annotation_num[sig_name[1]] += ann_len
 
-    # 加载标注文件
-    print("正在读取 " + num + " 号心电标注文件...")
-    annotation = wfdb.rdann(root + num, 'atr')
-    fs = annotation.fs
-    ann_len = annotation.ann_len
-    sig_sample = annotation.sample
-    sig_symbol = annotation.symbol
-    for key in annotation.__dict__:
-        print(key, ":", annotation.__dict__[key])
+        # 创建QRS检测器实例
+        qrs_detector1 = PanTomkinsQRSDetector(fs=fs)
+        qrs_detector2 = PanTomkinsQRSDetector(fs=fs)
 
-    print("初始化Pan-Tomkins QRS检测器...")
-    # 创建QRS检测器实例
-    qrs_detector = PanTomkinsQRSDetector(fs=fs)
+        # 对第一列信号进行QRS检测
+        qrs_peaks1 = qrs_detector1.detect_qrs_peaks(signal1)
+        heart_rate1, rr_intervals1 = qrs_detector1.calculate_heart_rate()
+        total_detection_num[sig_name[0]] += len(qrs_peaks1)
 
-    # 对第一列信号进行QRS检测
-    print("\n对第一列信号进行QRS检测...")
-    qrs_peaks1 = qrs_detector.detect_qrs_peaks(signal1)
-    heart_rate1, rr_intervals1 = qrs_detector.calculate_heart_rate()
+        # 对第二列信号进行QRS检测
+        qrs_peaks2 = qrs_detector2.detect_qrs_peaks(signal2)
+        heart_rate2, rr_intervals2 = qrs_detector2.calculate_heart_rate()
+        total_detection_num[sig_name[1]] += len(qrs_peaks2)
 
-    print(f"第一列信号检测到 {len(qrs_peaks1)} 个QRS波")
-    print(f"平均心率: {heart_rate1:.1f} bpm")
+        # print(f"第一列信号检测到 {len(qrs_peaks1)} 个QRS波")
+        # print(f"平均心率: {heart_rate1:.1f} bpm")
+        # print(f"第二列信号检测到 {len(qrs_peaks2)} 个QRS波")
+        # print(f"平均心率: {heart_rate2:.1f} bpm")
 
-    # 对第二列信号进行QRS检测
-    print("\n对第二列信号进行QRS检测...")
-    qrs_detector2 = PanTomkinsQRSDetector(fs=360)
-    qrs_peaks2 = qrs_detector2.detect_qrs_peaks(signal2)
-    heart_rate2, rr_intervals2 = qrs_detector2.calculate_heart_rate()
+    print("\n" + "=" * 60)
+    print("总体检测统计信息:")
 
-    print(f"第二列信号检测到 {len(qrs_peaks2)} 个QRS波")
-    print(f"平均心率: {heart_rate2:.1f} bpm")
+    for key in total_detection_num.keys():
+        detected = total_detection_num[key]
+        annotated = total_annotation_num[key]
 
-    # 绘制结果
-    print("\n绘制第一列信号的QRS检测结果...")
-    qrs_detector.plot_results(signal1, start_idx=0, num_samples=3000)
+        if annotated > 0:
+            detection_rate = (detected / annotated) * 100
+            print(f"导联 {key}:")
+            print(f"  检测到QRS波数量: {detected}")
+            print(f"  标注QRS波数量: {annotated}")
+            print(f"  检测率: {detection_rate:.2f}%")
+            print(f"  漏检数: {max(0, annotated - detected)}")
+            print("-" * 40)
+        else:
+            print(f"导联 {key}: 无标注数据")
+            print(f"  检测到QRS波数量: {detected}")
+            print("-" * 40)
 
-    print("\n绘制第二列信号的QRS检测结果...")
-    qrs_detector2.plot_results(signal2, start_idx=0, num_samples=3000)
+    # 计算总体统计
+    total_detected = sum(total_detection_num.values())
+    total_annotated = sum(total_annotation_num.values())
 
-    # 打印统计信息
-    print("\n=== QRS检测统计信息 ===")
-    print(f"信号1 - QRS波原始数量: {len(ann_len)}")
-    print(f"信号1 - QRS波检测数量: {len(qrs_peaks1)}")
-    print(f"信号1 - 平均心率: {heart_rate1:.2f} bpm")
-    if len(rr_intervals1) > 0:
-        print(f"信号1 - R-R间期均值: {np.mean(rr_intervals1):.2f} ms")
-        print(f"信号1 - R-R间期标准差: {np.std(rr_intervals1):.2f} ms")
+    if total_annotated > 0:
+        overall_rate = (total_detected / total_annotated) * 100
+        print(f"总体统计:")
+        print(f"  总检测数量: {total_detected}")
+        print(f"  总标注数量: {total_annotated}")
+        print(f"  总体检测率: {overall_rate:.2f}%")
+        print(f"  总漏检数: {max(0, total_annotated - total_detected)}")
+    else:
+        print(f"总体统计:")
+        print(f"  总检测数量: {total_detected}")
+        print(f"  无标注数据进行比较")
 
-    print(f"\n信号2 - QRS波原始数量: {len(ann_len)}")
-    print(f"信号2 - QRS波检测数量: {len(qrs_peaks2)}")
-    print(f"信号2 - 平均心率: {heart_rate2:.2f} bpm")
-    if len(rr_intervals2) > 0:
-        print(f"信号2 - R-R间期均值: {np.mean(rr_intervals2):.2f} ms")
-        print(f"信号2 - R-R间期标准差: {np.std(rr_intervals2):.2f} ms")
+    print("=" * 60)
+
+        # # 绘制结果
+        # print("\n绘制第一列信号的QRS检测结果...")
+        # qrs_detector.plot_results(signal1, start_idx=0, num_samples=3000)
+        #
+        # print("\n绘制第二列信号的QRS检测结果...")
+        # qrs_detector2.plot_results(signal2, start_idx=0, num_samples=3000)
+
+        # # 打印统计信息
+        # print("\n=== QRS检测统计信息 ===")
+        # print(f"信号1 - QRS波原始数量: {len(ann_len)}")
+        # print(f"信号1 - QRS波检测数量: {len(qrs_peaks1)}")
+        # print(f"信号1 - 平均心率: {heart_rate1:.2f} bpm")
+        # if len(rr_intervals1) > 0:
+        #     print(f"信号1 - R-R间期均值: {np.mean(rr_intervals1):.2f} ms")
+        #     print(f"信号1 - R-R间期标准差: {np.std(rr_intervals1):.2f} ms")
+        #
+        # print(f"\n信号2 - QRS波原始数量: {len(ann_len)}")
+        # print(f"信号2 - QRS波检测数量: {len(qrs_peaks2)}")
+        # print(f"信号2 - 平均心率: {heart_rate2:.2f} bpm")
+        # if len(rr_intervals2) > 0:
+        #     print(f"信号2 - R-R间期均值: {np.mean(rr_intervals2):.2f} ms")
+        #     print(f"信号2 - R-R间期标准差: {np.std(rr_intervals2):.2f} ms")
+
 
 if __name__ == "__main__":
     main()
-    print("\n" + "="*60)
-
-
-
-
-
-
-
-
-
-
+    print("\n" + "=" * 60)
