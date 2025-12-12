@@ -23,7 +23,7 @@ class PanTomkinsQRSDetector:
     通过带通滤波、微分、平方和移动积分等步骤检测R波峰值
     """
 
-    def __init__(self, fs=360, adaptive_params=True):
+    def __init__(self, fs=360, signal_name="MLII"):
         """
         初始化QRS检测器
 
@@ -38,34 +38,69 @@ class PanTomkinsQRSDetector:
         self.squared_signal = None
         self.integrated_signal = None
         self.qrs_peaks = []
+        
+    def get_filter_parameters(self, signal_name="MLII"):
+        """根据导联获取最优滤波参数"""
+        
+        # 基于导联特性的频率参数
+        filter_params = {
+            # 肢体导联-加压单极导联
+            'aVR': {'low': 0.5, 'high': 40.0, 'threshold_factor': 1.4},
+            'aVL': {'low': 0.5, 'high': 40.0, 'threshold_factor': 1.4},
+            'aVF': {'low': 0.5, 'high': 40.0, 'threshold_factor': 1.4},
+            # 肢体导联-标准双极导联
+            'I': {'low': 0.5, 'high': 40.0, 'threshold_factor': 1.4},
+            'MLII': {'low': 0.5, 'high': 40.0, 'threshold_factor': 1.4},
+            'MLIII': {'low': 0.5, 'high': 40.0, 'threshold_factor': 1.4},
+            
+            # 胸前导联 - 
+            # V1特殊处理
+            'V1': {'low': 0.3, 'high': 50.0, 'threshold_factor': 1.2},
+            # V1导联特点：R波小，S波深，需要更低频率捕获，更高频率保留细节
+            
+            # 胸前导联 - 过渡区
+            'V2': {'low': 0.4, 'high': 45.0, 'threshold_factor': 1.3},
+            # V2导联特点：介于V1和V3之间，中等参数
+            
+            # 胸前导联 - 左心前区
+            'V3': {'low': 0.5, 'high': 45.0, 'threshold_factor': 1.4},
+            'V4': {'low': 0.5, 'high': 45.0, 'threshold_factor': 1.4},
+            'V5': {'low': 0.5, 'high': 45.0, 'threshold_factor': 1.4},
+            'V6': {'low': 0.5, 'high': 45.0, 'threshold_factor': 1.4},
+            # V3-V6导联特点：R波明显，标准参数即可
+        }
 
-    def bandpass_filter(self, signal_data):
+        return filter_params.get(signal_name, filter_params['MLII'])
+
+    def bandpass_filter(self, signal_data, signal_name="MLII"):
         """
-        带通滤波器 (0.5-45 Hz)
-        专门针对QRS波群的频率特性设计
-
+        自适应带通滤波器
+        根据不同导联使用不同的频率参数
         参数:
             signal_data: 输入ECG信号
 
         返回:
             filtered_signal: 滤波后的信号
         """
-        # 设计带通滤波器 - 针对QRS波群优化频率范围，略微扩展频带
+        # 获取该导联的滤波参数
+        params = self.get_filter_parameters(signal_name)
+        
+        # 设计带通滤波器
         nyquist = 0.5 * self.fs
-        low = 0.5 / nyquist  # 略微降低低频截止，保留更多QRS信息
-        high = 40.0 / nyquist  # 略微提高高频截止，保留高频成分
+        low = params['low'] / nyquist
+        high = params['high'] / nyquist
 
         # 使用3阶Butterworth滤波器 - 平衡滤波效果和信号保留
-        b, a = scipy_signal.butter(3, [low, high], btype='band')
+        b, a = scipy_signal.butter(5, [low, high], btype='band')
 
         # 应用零相位滤波
         filtered_signal = scipy_signal.filtfilt(b, a, signal_data)
 
-        # # 为了减少漏检，添加原始信号的加权
-        original_weight = 0.3  # 原始信号权重
-        filtered_weight = 0.7  # 滤波信号权重
-        combined_signal = original_weight * signal_data + filtered_weight * filtered_signal
-        # combined_signal = filtered_signal
+        # # # 为了减少漏检，添加原始信号的加权
+        # original_weight = 0.3  # 原始信号权重
+        # filtered_weight = 0.7  # 滤波信号权重
+        # combined_signal = original_weight * signal_data + filtered_weight * filtered_signal
+        combined_signal = filtered_signal
         return combined_signal
 
     def derivative(self, signal_data):
@@ -127,19 +162,23 @@ class PanTomkinsQRSDetector:
 
         return integrated_signal
 
-    def detect_qrs_peaks(self, signal_data):
+    def detect_qrs_peaks(self, signal_data, signal_name="MLII"):
         """
         检测QRS波峰值
         使用双阈值检测算法
 
         参数:
             signal_data: 输入ECG信号
+            signal_name: 信号名称（用于自适应参数）
 
         返回:
             qrs_peaks: QRS波峰值位置索引
         """
-        # 步骤1: 带通滤波
-        self.filtered_signal = self.bandpass_filter(signal_data)
+        # 保存信号名称用于自适应参数
+        self.current_signal_name = signal_name
+
+        # 步骤1: 带通滤波 - 传递signal_name以使用自适应参数
+        self.filtered_signal = self.bandpass_filter(signal_data, signal_name)
 
         # 步骤2: 微分
         self.differentiated_signal = self.derivative(self.filtered_signal)
@@ -150,26 +189,35 @@ class PanTomkinsQRSDetector:
         # 步骤4: 移动窗口积分
         self.integrated_signal = self.moving_window_integration(self.squared_signal)
 
-        # 步骤5: QRS检测
-        self.qrs_peaks = self._threshold_detection()
+        # 步骤5: QRS检测 - 传递信号名称用于自适应阈值
+        self.qrs_peaks = self._threshold_detection(signal_name)
 
         return self.qrs_peaks
 
-    def _threshold_detection(self):
+    def _threshold_detection(self, signal_name="MLII"):
         """
-        简单的阈值检测算法
-        使用固定阈值和基本的不应期检测QRS波
+        自适应阈值检测算法
+        根据不同导联使用不同的阈值参数和不应期
         """
         if self.integrated_signal is None:
             return []
 
-        # 设置固定阈值 - 基于信号的统计特性
+        # 获取该导联的自适应参数
+        params = self.get_filter_parameters(signal_name)
+
+        # 设置自适应阈值 - 基于信号的统计特性和导联特性
         signal_mean = np.mean(self.integrated_signal)
         signal_std = np.std(self.integrated_signal)
-        threshold = signal_mean + 1.5 * signal_std  # 阈值设为均值+1.5倍标准差
+        threshold_factor = params.get('threshold_factor', 1.5)
+        threshold = signal_mean + threshold_factor * signal_std
 
-        # 设置不应期（防止重复检测）- 200ms
-        refractory_period = int(0.2 * self.fs)
+        # 设置自适应不应期 - V1导联使用更短的不应期以支持更高心率
+        if signal_name == 'V1':
+            refractory_period = int(0.15 * self.fs)  # 150ms，针对V1导联的小R波
+        elif signal_name in ['V2', 'V3']:
+            refractory_period = int(0.17 * self.fs)  # 170ms，过渡区导联
+        else:
+            refractory_period = int(0.2 * self.fs)   # 200ms，标准不应期
 
         peaks = []
 
@@ -579,16 +627,20 @@ def main():
     # signal2 = data[:, 1]
 
     # MIT-BIH
-    # 导联方式 ['MLII', 'V1', 'V2', 'V4', 'V5']
+    # 导联方式 ['MLII', 'MLIII', 'V1', 'V2', 'V4', 'V5']
     total_annotation_num = {
+        "I": 0,
         "MLII": 0,
+        "MLIII": 0,
         "V1": 0,
         "V2": 0,
         "V3": 0,
         "V4": 0,
         "V5": 0}
     total_detection_num = {
+        "I": 0,
         "MLII": 0,
+        "MLIII": 0,
         "V1": 0,
         "V2": 0,
         "V3": 0,
@@ -623,13 +675,13 @@ def main():
         qrs_detector1 = PanTomkinsQRSDetector(fs=fs)
         qrs_detector2 = PanTomkinsQRSDetector(fs=fs)
 
-        # 对第一列信号进行QRS检测
-        qrs_peaks1 = qrs_detector1.detect_qrs_peaks(signal1)
+        # 对第一列信号进行QRS检测 - 传递导联名称以使用自适应参数
+        qrs_peaks1 = qrs_detector1.detect_qrs_peaks(signal1, sig_name[0])
         heart_rate1, rr_intervals1 = qrs_detector1.calculate_heart_rate()
         total_detection_num[sig_name[0]] += len(qrs_peaks1)
 
-        # 对第二列信号进行QRS检测
-        qrs_peaks2 = qrs_detector2.detect_qrs_peaks(signal2)
+        # 对第二列信号进行QRS检测 - 传递导联名称以使用自适应参数
+        qrs_peaks2 = qrs_detector2.detect_qrs_peaks(signal2, sig_name[1])
         heart_rate2, rr_intervals2 = qrs_detector2.calculate_heart_rate()
         total_detection_num[sig_name[1]] += len(qrs_peaks2)
 
