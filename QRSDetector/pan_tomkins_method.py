@@ -5,7 +5,103 @@ from scipy import signal as scipy_signal
 import wfdb
 
 
-class PanTomkinsQRSDetector:
+def get_signal_params(signal_name):
+    # 基于导联特性的参数
+    if signal_name == 'V1':
+        signal_params = {
+            'low': 1, 'high': 50.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.080,
+            'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
+            'threshold_factor': 1.2,
+        }
+    elif signal_name == 'V2':
+        signal_params = {
+            'low': 3, 'high': 30.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.080,
+            'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
+            'threshold_factor': 1.3
+        }
+    elif signal_name == 'V3':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.080,
+            'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'V4':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.080,
+            'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'V5':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.080,
+            'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'V6':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.080,
+            'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'I':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.080,
+            'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'MLII':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.080,
+            'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'MLIII':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.080,
+            'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'aVR':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.080,
+            'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'aVL':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.080,
+            'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'aVF':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.080,
+            'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    else:
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.080,
+            'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    
+    return signal_params
+
+class PanTomkinsQRSDetectorOffline:
     """
     基于Pan-Tomkins算法的QRS波检测器
 
@@ -28,99 +124,7 @@ class PanTomkinsQRSDetector:
         self.squared_signal = None
         self.integrated_signal = None
         self.qrs_peaks = []
-
-        # 基于导联特性的参数
-        if signal_name == 'V1':
-            self.params = {
-                'low': 1, 'high': 50.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-                'integration_window_size': 0.080,
-                'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.15,
-                'threshold_factor': 1.2,
-            }
-        elif signal_name == 'V2':
-            self.params = {
-                'low': 3, 'high': 30.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-                'integration_window_size': 0.080,
-                'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.17,
-                'threshold_factor': 1.3
-            }
-        elif signal_name == 'V3':
-            self.params = {
-                'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-                'integration_window_size': 0.080,
-                'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.17,
-                'threshold_factor': 1.4
-            }
-        elif signal_name == 'V4':
-            self.params = {
-                'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-                'integration_window_size': 0.080,
-                'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
-                'threshold_factor': 1.4
-            }
-        elif signal_name == 'V5':
-            self.params = {
-                'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-                'integration_window_size': 0.080,
-                'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
-                'threshold_factor': 1.4
-            }
-        elif signal_name == 'V6':
-            self.params = {
-                'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-                'integration_window_size': 0.080,
-                'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
-                'threshold_factor': 1.4
-            }
-        elif signal_name == 'I':
-            self.params = {
-                'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-                'integration_window_size': 0.080,
-                'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
-                'threshold_factor': 1.4
-            }
-        elif signal_name == 'MLII':
-            self.params = {
-                'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-                'integration_window_size': 0.080,
-                'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
-                'threshold_factor': 1.4
-            }
-        elif signal_name == 'MLIII':
-            self.params = {
-                'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-                'integration_window_size': 0.080,
-                'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
-                'threshold_factor': 1.4
-            }
-        elif signal_name == 'aVR':
-            self.params = {
-                'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-                'integration_window_size': 0.080,
-                'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
-                'threshold_factor': 1.4
-            }
-        elif signal_name == 'aVL':
-            self.params = {
-                'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-                'integration_window_size': 0.080,
-                'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
-                'threshold_factor': 1.4
-            }
-        elif signal_name == 'aVF':
-            self.params = {
-                'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-                'integration_window_size': 0.080,
-                'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
-                'threshold_factor': 1.4
-            }
-        else:
-            self.params = {
-                'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-                'integration_window_size': 0.080,
-                'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
-                'threshold_factor': 1.4
-            }
+        self.params = get_signal_params(signal_name=signal_name)
 
     def bandpass_filter(self, signal_data):
         """
@@ -226,12 +230,12 @@ class PanTomkinsQRSDetector:
         overlap_size = int(self.params['overlap_window_size'] * self.fs)    # 重叠窗口大小 (秒)
 
         # 设置不应期 (避免同一QRS波被重复检测)
-        refractory_period = int(self.params['refractory_period'] * self.fs)
+        refractory_period = int(self.params['refractory_period'] * self.fs)  # 不应期（秒）
 
         # 获取该导联的阈值系数
         threshold_factor = self.params['threshold_factor']
 
-        all_peaks = []
+        all_peaks = [] # 检测到的R-peaks
 
         # 滑动窗口处理
         for start_idx in range(0, len(signal_data), overlap_size):
@@ -253,46 +257,24 @@ class PanTomkinsQRSDetector:
             for i in range(len(window_signal)):
                 actual_idx = start_idx + i
                 current_value = window_signal[i]
-
                 # 第一级过滤: 检查是否超过阈值
                 if current_value > current_threshold:
-                    # 第二级过滤: 检查是否在全局不应期内
+                    # 第二级过滤: 检查是否在不应期内
                     if len(all_peaks) == 0 or (actual_idx - all_peaks[-1]) > refractory_period:
-                        # 第三级过滤: 检查是否在局部窗口不应期内
-                        if len(window_peaks) == 0 or (i - window_peaks[-1]) > int(0.2 * self.fs):
-                            # 在小范围窗口内寻找真正的峰值点 (精确定位)
-                            search_range = min(10, len(window_signal) - i - 1)
-                            local_peak_idx = i
+                        # 在窗口内寻找峰值点
+                        search_range = min(10, len(window_signal) - i - 1)
+                        local_peak_idx = i
 
-                            for j in range(max(0, i - 5), min(len(window_signal), i + search_range + 1)):
-                                if window_signal[j] > window_signal[local_peak_idx]:
-                                    local_peak_idx = j
+                        for j in range(max(0, i - 5), min(len(window_signal), i + search_range + 1)):
+                            if window_signal[j] > window_signal[local_peak_idx]:
+                                local_peak_idx = j
 
-                            # 添加找到的峰值 (避免重复)
-                            if local_peak_idx not in window_peaks:
-                                window_peaks.append(local_peak_idx)
-                                all_peaks.append(start_idx + local_peak_idx)
+                        # 添加找到的峰值 (避免重复)
+                        if local_peak_idx not in window_peaks:
+                            window_peaks.append(local_peak_idx)
+                            all_peaks.append(start_idx + local_peak_idx)
 
-        # 峰值二次精确定位 - 在原始滤波信号上重新定位
-        refined_peaks = []
-        search_window = int(0.03 * self.fs)  # 30ms搜索窗口 (对应QRS波宽度)
-
-        for peak in all_peaks:
-            # 定义搜索范围
-            search_start = max(0, peak - search_window)
-            search_end = min(len(self.filtered_signal), peak + search_window)
-
-            if search_start < search_end:
-                # 在原始滤波信号中搜索局部最大值
-                search_segment = self.filtered_signal[search_start:search_end]
-                if len(search_segment) > 0:
-                    # 找到局部最大值的索引
-                    local_max_idx = np.argmax(search_segment) + search_start
-                    # 最终不应期检查，避免重复检测
-                    if len(refined_peaks) == 0 or (local_max_idx - refined_peaks[-1]) > int(0.15 * self.fs):
-                        refined_peaks.append(local_max_idx)
-
-        return refined_peaks
+        return all_peaks
 
     def detect_qrs_peaks(self, signal_data):
         """
@@ -321,6 +303,8 @@ class PanTomkinsQRSDetector:
         self.qrs_peaks = self.threshold_detection(self.integrated_signal)
 
         return self.qrs_peaks
+
+
 if __name__ == "__main__":
     # MIT-BIH - 单通道检测
     # 路径
@@ -369,9 +353,14 @@ if __name__ == "__main__":
             # MIT-BIH标注从1开始，需要转换为0-based索引
             sig_sample = annotation.sample[1:]
             # 创建QRS检测器实例
-            qrs_detector = PanTomkinsQRSDetector(fs=fs)
+            qrs_detector = PanTomkinsQRSDetectorOffline(fs=fs)
             # 进行QRS检测
             qrs_peaks = qrs_detector.detect_qrs_peaks(signal)
+
+            print(np.array(sig_sample))
+            print(np.array(sig_sample).shape)
+            print(np.array(qrs_peaks))
+            print(np.array(qrs_peaks).shape)
 
         except Exception as e:
             print(e)
