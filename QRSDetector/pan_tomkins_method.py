@@ -1,6 +1,5 @@
+from collections import deque
 import numpy as np
-import matplotlib.pyplot as plt
-from requests.packages import target
 from scipy import signal as scipy_signal
 import wfdb
 
@@ -104,12 +103,9 @@ def get_signal_params(signal_name):
 class PanTomkinsQRSDetectorOffline:
     """
     基于Pan-Tomkins算法的QRS波检测器
-
-    Pan-Tomkins算法是ECG信号处理中经典的QRS波检测算法，
-    通过带通滤波、微分、平方和移动积分等步骤检测R波峰值
     """
 
-    def __init__(self, fs=360, signal_name="MLII"):
+    def __init__(self, signal_name="MLII"):
         """
         初始化QRS检测器
 
@@ -117,8 +113,209 @@ class PanTomkinsQRSDetectorOffline:
             fs: 采样频率 (Hz)
             signal_name: ECG导联名称 (如 "MLII", "V1", "V2" 等)
         """
-        self.fs = fs
+        self.fs = 360
         self.signal = None
+        self.filtered_signal = None
+        self.differentiated_signal = None
+        self.squared_signal = None
+        self.integrated_signal = None
+        self.qrs_peaks = []
+        self.params = get_signal_params(signal_name=signal_name)
+
+    def bandpass_filter(self, signal_data):
+        """
+        自适应带通滤波器
+        根据不同导联使用不同的频率参数
+
+        参数:
+            signal_data: 输入ECG信号
+
+        返回:
+            combined_signal: 滤波后与原始信号加权组合的信号
+        """
+        # 获取该导联的滤波参数
+
+        # 设计带通滤波器
+        nyquist = 0.5 * self.fs
+        low = self.params['low'] / nyquist
+        high = self.params['high'] / nyquist
+        order = self.params['filter_order']
+
+        # 使用 n 阶 Butterworth 滤波器 - 平衡滤波效果和信号保留
+        b, a = scipy_signal.butter(order, [low, high], btype='band')
+
+        # 应用零相位滤波
+        filtered_signal = scipy_signal.filtfilt(b, a, signal_data)
+
+        # 添加原始信号的加权
+        combined_signal = (self.params["original_weight"] * signal_data
+                           + self.params["filtered_weight"] * filtered_signal)
+        return combined_signal
+
+    def derivative(self, signal_data):
+        """
+        优化的微分器 - 使用5点中心差分
+        更好地突出QRS波的高斜率特性，减少噪声影响
+
+        参数:
+            signal_data: 输入信号
+
+        返回:
+            differentiated_signal: 微分后的信号
+        """
+        differentiated_signal = np.zeros_like(signal_data)
+
+        # 使用5点中心差分公式提高精度
+        # f'(x) ≈ (f(x-2h) - 8f(x-h) + 8f(x+h) - f(x+2h)) / (12h)
+        for i in range(2, len(signal_data) - 2):
+            differentiated_signal[i] = (-signal_data[i + 2] + 8 * signal_data[i + 1]
+                                        - 8 * signal_data[i - 1] + signal_data[i - 2]) / 12
+
+        return differentiated_signal
+
+    def squaring(self, signal_data):
+        """
+        平方函数
+        使所有点为正值，并放大高斜率点
+
+        参数:
+            signal_data: 输入信号
+
+        返回:
+            squared_signal: 平方后的信号
+        """
+        return signal_data ** 2
+
+    def moving_window_integration(self, signal_data):
+        """
+        移动窗口积分器
+        对微分平方后的信号进行平滑，突出QRS波特征
+
+        参数:
+            signal_data: 输入信号 (通常是微分平方后的信号)
+
+        返回:
+            integrated_signal: 移动平均积分后的信号
+        """
+
+        # 窗口中的采样点数量
+        window_sample = int(self.params['integration_window_size'] * self.fs)
+
+        # 使用卷积实现高效的移动平均积分
+        window = np.ones(window_sample) / window_sample
+        integrated_signal = np.convolve(signal_data, window, mode='same')
+
+        return integrated_signal
+
+    def threshold_detection(self, signal_data):
+        """
+        滑动窗口阈值检测算法
+        使用自适应的滑动窗口来适应信号变化，检测QRS波峰值
+
+        参数:
+            signal_data: 输入积分信号
+
+        返回:
+            refined_peaks: 定位的QRS波峰值位置列表
+        """
+        if signal_data is None or len(signal_data) == 0:
+            return []
+
+        # 设置滑动窗口参数
+        window_size = int(self.params['detection_window_size'] * self.fs)  # 检测窗口大小 (秒)
+        overlap_size = int(self.params['overlap_window_size'] * self.fs)    # 重叠窗口大小 (秒)
+
+        # 设置不应期 (避免同一QRS波被重复检测)
+        refractory_period = int(self.params['refractory_period'] * self.fs)  # 不应期（秒）
+
+        # 获取该导联的阈值系数
+        threshold_factor = self.params['threshold_factor']
+
+        all_peaks = [] # 检测到的R-peaks
+
+        # 滑动窗口处理
+        for start_idx in range(0, len(signal_data), overlap_size):
+            end_idx = min(start_idx + window_size, len(signal_data))
+
+            if end_idx - start_idx < overlap_size:  # 最后一个窗口太小就跳过
+                break
+
+            # 提取当前窗口的信号
+            window_signal = signal_data[start_idx:end_idx]
+
+            # 计算当前窗口的自适应阈值
+            window_mean = np.mean(window_signal)
+            window_std = np.std(window_signal)
+            current_threshold = window_mean + threshold_factor * window_std
+
+            # 在窗口内检测候选峰值
+            window_peaks = []
+            for i in range(len(window_signal)):
+                actual_idx = start_idx + i
+                current_value = window_signal[i]
+                # 第一级过滤: 检查是否超过阈值
+                if current_value > current_threshold:
+                    # 第二级过滤: 检查是否在不应期内
+                    if len(all_peaks) == 0 or (actual_idx - all_peaks[-1]) > refractory_period:
+                        # 在窗口内寻找峰值点
+                        search_range = min(10, len(window_signal) - i - 1)
+                        local_peak_idx = i
+
+                        for j in range(max(0, i - 5), min(len(window_signal), i + search_range + 1)):
+                            if window_signal[j] > window_signal[local_peak_idx]:
+                                local_peak_idx = j
+
+                        # 添加找到的峰值 (避免重复)
+                        if local_peak_idx not in window_peaks:
+                            window_peaks.append(local_peak_idx)
+                            all_peaks.append(start_idx + local_peak_idx)
+
+        return all_peaks
+
+    def detect_qrs_peaks(self, signal_data):
+        """
+        检测QRS波峰值
+
+        参数:
+            signal_data: 输入ECG信号
+
+        返回:
+            qrs_peaks: QRS波峰值位置索引
+        """
+
+        # 步骤1: 带通滤波
+        self.filtered_signal = self.bandpass_filter(signal_data)
+
+        # 步骤2: 微分
+        self.differentiated_signal = self.derivative(self.filtered_signal)
+
+        # 步骤3: 平方
+        self.squared_signal = self.squaring(self.differentiated_signal)
+
+        # 步骤4: 移动窗口积分
+        self.integrated_signal = self.moving_window_integration(self.squared_signal)
+
+        # 步骤5: QRS检测
+        self.qrs_peaks = self.threshold_detection(self.integrated_signal)
+
+        return self.qrs_peaks
+
+
+class PanTomkinsQRSDetectorOnline:
+    """
+    基于Pan-Tomkins算法的QRS波检测器
+    """
+
+    def __init__(self, signal_name="MLII"):
+        """
+        初始化QRS检测器
+
+        参数:
+            fs: 采样频率 (Hz)
+            signal_name: ECG导联名称 (如 "MLII", "V1", "V2" 等)
+        """
+        self.fs = 360
+        self.signal = deque()
         self.filtered_signal = None
         self.differentiated_signal = None
         self.squared_signal = None

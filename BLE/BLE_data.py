@@ -32,58 +32,7 @@ def handle_disconnect(client):
 def handle_rx(sender, data):
 	hex_str = ' '.join(f'{b:02x}' for b in data)  # 只显示前32字节
 	print(data)
-	if 0:
-		# 解析固定结构
-		# 协议包结构: 功能码(2) + 数据长度(2) + 数据内容(238) + CRC16(2) = 244字节
-		header = data[0:4][0]  # 功能码
-		packet_sn = struct.unpack('<H', data[4:6])[0]  # 序列号，小端
-		data_type = struct.unpack('<H', data[6:8])[0]  # 数据类型，小端
-		data_len = struct.unpack('<H', data[8:10])[0]  # 数据长度，小端
-		fixed_value = struct.unpack('<H', data[10:12])[0]  # 固定值
-		# 导联脱落状态 (1字节)
-		lead_status = data[12]
-		# 解析采样数据 (115个点，每个点2字节小端)
-		samples = []
-		sample_data_start = 13  # 采样数据起始位置
-
-		for i in range(115):
-			sample_offset = sample_data_start + i * 2
-			if sample_offset + 2 > len(data) - 3:  # 减去预留字节和校验和
-				break
-
-			# 读取小端格式的16位整数
-			sample_value = struct.unpack('<H', data[sample_offset:sample_offset + 2])[0]
-
-			# 转换为电压值 (μV)，系数0.288需要根据设备校准
-			voltage_uV = sample_value * 0.288
-			samples.append({
-				'raw_adc': sample_value,
-				'voltage_uV': voltage_uV,
-				'voltage_mV': voltage_uV / 1000.0
-			})
-
-		# 预留字节
-		reserved_byte = data[243 - 2]  # 倒数第3字节
-
-		# CRC校验和 (最后2字节)
-		crc_checksum = struct.unpack('<H', data[-2:])[0]
-
-		hex_str += f" (共{len(data)}字节)"
-
-		parsed_data = {
-			'header': header.hex(),
-			'packet_sn': packet_sn,
-			'data_type': data_type,
-			'data_len': data_len,
-			'fixed_value': fixed_value,
-			'lead_status': lead_status,
-			'samples': samples,
-			'sample_count': len(samples),
-			'reserved_byte': reserved_byte,
-			'crc_checksum': f'{crc_checksum:04x}',
-			'raw_checksum': data[-2:].hex()
-		}
-	elif 1:
+	if 1:
 		# 解析固定结构
 		# 协议包结构: 功能码(2) + 数据长度(2) + 数据内容(238) + CRC16(2) = 244字节
 		feature_code = data[0:2]  # 功能码
