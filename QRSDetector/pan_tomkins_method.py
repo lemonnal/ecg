@@ -97,6 +97,9 @@ def get_signal_params(signal_name):
             'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
             'threshold_factor': 1.4
         }
+        
+        
+        
     
     return signal_params
 
