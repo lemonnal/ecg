@@ -1,5 +1,8 @@
 from collections import deque
+
 import numpy as np
+import matplotlib.pyplot as plt
+from requests.packages import target
 from scipy import signal as scipy_signal
 import wfdb
 
@@ -90,19 +93,14 @@ def get_signal_params(signal_name):
             'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
             'threshold_factor': 1.4
         }
-    elif signal_name == 'aaa':
+    else:
         signal_params = {
             'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.080,
             'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
             'threshold_factor': 1.4
         }
-    else:
-        signal_name = {}
         
-        
-        
-    
     return signal_params
 
 class PanTomkinsQRSDetectorOffline:
