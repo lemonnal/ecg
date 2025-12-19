@@ -3,356 +3,33 @@ import matplotlib.pyplot as plt
 from scipy import signal as scipy_signal
 import wfdb
 from tqdm import tqdm
+from QRSDetector.pan_tomkins_method import PanTomkinsQRSDetectorOffline
 
 # Set default font for better English display
 plt.rcParams['font.sans-serif'] = ['Arial', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False  # Correct minus sign display
-# root = "/home/yogsothoth/DataSet/mit-bih-arrhythmia-database-1.0.0/"
-# numberSet = ['100', '101', '103', '105', '106', '107', '108', '109', '111', '112', '113', '114', '115',
-#              '116', '117', '119', '121', '122', '123', '124', '200', '201', '202', '203', '205', '208',
-#              '210', '212', '213', '214', '215', '217', '219', '220', '221', '222', '223', '228', '230',
-#              '231', '232', '233', '234']
-root = "/home/yogsothoth/DataSet/european-st-t-database-1.0.0/"
-numberSet = ['e0103', 'e0104', 'e0105', 'e0106', 'e0107', 'e0108', 'e0110', 'e0111', 'e0112', 'e0113', 'e0114', 'e0115',
-             'e0116', 'e0118', 'e0119', 'e0121', 'e0122', 'e0123', 'e0124', 'e0125', 'e0126', 'e0127', 'e0129', 'e0133',
-             'e0136', 'e0139', 'e0147', 'e0148', 'e0151', 'e0154', 'e0155', 'e0159', 'e0161', 'e0162', 'e0163', 'e0166',
-             'e0170', 'e0202', 'e0203', 'e0204', 'e0205', 'e0206', 'e0207', 'e0208', 'e0210', 'e0211', 'e0212', 'e0213',
-             'e0302', 'e0303', 'e0304', 'e0305', 'e0306', 'e0403', 'e0404', 'e0405', 'e0406', 'e0408', 'e0409', 'e0410',
-             'e0411', 'e0413', 'e0415', 'e0417', 'e0418', 'e0501', 'e0509', 'e0515', 'e0601', 'e0602', 'e0603', 'e0604',
-             'e0605', 'e0606', 'e0607', 'e0609', 'e0610', 'e0611', 'e0612', 'e0613', 'e0614', 'e0615', 'e0704', 'e0801',
-             'e0808', 'e0817', 'e0818', 'e1301', 'e1302', 'e1304']
+root = "/home/yogsothoth/DataSet/mit-bih-arrhythmia-database-1.0.0/"
+numberSet = ['100', '101', '103', '105', '106', '107', '108', '109', '111', '112', '113', '114', '115',
+             '116', '117', '119', '121', '122', '123', '124', '200', '201', '202', '203', '205', '208',
+             '210', '212', '213', '214', '215', '217', '219', '220', '221', '222', '223', '228', '230',
+             '231', '232', '233', '234']
+# root = "/home/yogsothoth/DataSet/european-st-t-database-1.0.0/"
+# numberSet = ['e0103', 'e0104', 'e0105', 'e0106', 'e0107', 'e0108', 'e0110', 'e0111', 'e0112', 'e0113', 'e0114', 'e0115',
+#              'e0116', 'e0118', 'e0119', 'e0121', 'e0122', 'e0123', 'e0124', 'e0125', 'e0126', 'e0127', 'e0129', 'e0133',
+#              'e0136', 'e0139', 'e0147', 'e0148', 'e0151', 'e0154', 'e0155', 'e0159', 'e0161', 'e0162', 'e0163', 'e0166',
+#              'e0170', 'e0202', 'e0203', 'e0204', 'e0205', 'e0206', 'e0207', 'e0208', 'e0210', 'e0211', 'e0212', 'e0213',
+#              'e0302', 'e0303', 'e0304', 'e0305', 'e0306', 'e0403', 'e0404', 'e0405', 'e0406', 'e0408', 'e0409', 'e0410',
+#              'e0411', 'e0413', 'e0415', 'e0417', 'e0418', 'e0501', 'e0509', 'e0515', 'e0601', 'e0602', 'e0603', 'e0604',
+#              'e0605', 'e0606', 'e0607', 'e0609', 'e0610', 'e0611', 'e0612', 'e0613', 'e0614', 'e0615', 'e0704', 'e0801',
+#              'e0808', 'e0817', 'e0818', 'e1301', 'e1302', 'e1304']
 
-
-# numberSet = ['100']
-
-
-class PanTomkinsQRSDetector:
+class PanTomkinsQRSDetector(PanTomkinsQRSDetectorOffline):
     """
     基于Pan-Tomkins算法的QRS波检测器
-
-    Pan-Tomkins算法是ECG信号处理中经典的QRS波检测算法，
-    通过带通滤波、微分、平方和移动积分等步骤检测R波峰值
     """
 
-    def __init__(self, fs=360, signal_name="MLII"):
-        """
-        初始化QRS检测器
-
-        参数:
-            fs: 采样频率 (Hz)
-            adaptive_params: 是否使用自适应参数优化
-        """
-        self.fs = fs
-        self.signal = None
-        self.filtered_signal = None
-        self.differentiated_signal = None
-        self.squared_signal = None
-        self.integrated_signal = None
-        self.qrs_peaks = []
-
-    def get_filter_parameters(self, signal_name="MLII"):
-        """根据导联获取最优滤波参数"""
-
-        # 基于导联特性的频率参数
-        filter_params = {
-            # 肢体导联-加压单极导联
-            'aVR': {'low': 5, 'high': 15.0, 'threshold_factor': 1.4},
-            'aVL': {'low': 5, 'high': 15.0, 'threshold_factor': 1.4},
-            'aVF': {'low': 5, 'high': 15.0, 'threshold_factor': 1.4},
-            # 肢体导联-标准双极导联
-            'I': {'low': 5, 'high': 15.0, 'threshold_factor': 1.4},
-            'MLII': {'low': 5, 'high': 15.0, 'threshold_factor': 1.4},
-            'MLIII': {'low': 5, 'high': 15.0, 'threshold_factor': 1.4},
-
-            # 胸前导联 -
-            # V1特殊处理
-            'V1': {'low': 1, 'high': 50.0, 'threshold_factor': 1.2},
-            # V1导联特点：R波小，S波深，需要更低频率捕获，更高频率保留细节
-
-            # 胸前导联 - 过渡区
-            'V2': {'low': 3, 'high': 30.0, 'threshold_factor': 1.3},
-            # V2导联特点：介于V1和V3之间，中等参数
-
-            # 胸前导联 - 左心前区
-            'V3': {'low': 5, 'high': 15.0, 'threshold_factor': 1.4},
-            'V4': {'low': 5, 'high': 15.0, 'threshold_factor': 1.4},
-            'V5': {'low': 5, 'high': 15.0, 'threshold_factor': 1.4},
-            'V6': {'low': 5, 'high': 15.0, 'threshold_factor': 1.4},
-            # V3-V6导联特点：R波明显，标准参数即可
-        }
-
-        return filter_params.get(signal_name, filter_params['MLII'])
-
-    def bandpass_filter(self, signal_data, signal_name="MLII"):
-        """
-        自适应带通滤波器
-        根据不同导联使用不同的频率参数
-        参数:
-            signal_data: 输入ECG信号
-
-        返回:
-            filtered_signal: 滤波后的信号
-        """
-        # 获取该导联的滤波参数
-        params = self.get_filter_parameters(signal_name)
-
-        # 设计带通滤波器
-        nyquist = 0.5 * self.fs
-        low = params['low'] / nyquist
-        high = params['high'] / nyquist
-
-        # 使用5阶Butterworth滤波器 - 平衡滤波效果和信号保留
-        b, a = scipy_signal.butter(5, [low, high], btype='band')
-
-        # 应用零相位滤波
-        filtered_signal = scipy_signal.filtfilt(b, a, signal_data)
-
-        # # # 为了减少漏检，添加原始信号的加权
-        # original_weight = 0.3  # 原始信号权重
-        # filtered_weight = 0.7  # 滤波信号权重
-        # combined_signal = original_weight * signal_data + filtered_weight * filtered_signal
-        combined_signal = filtered_signal
-        return combined_signal
-
-    def derivative(self, signal_data):
-        """
-        优化的微分器 - 使用5点中心差分
-        更好地突出QRS波的高斜率特性，减少噪声影响
-
-        参数:
-            signal_data: 输入信号
-
-        返回:
-            differentiated_signal: 微分后的信号
-        """
-        differentiated_signal = np.zeros_like(signal_data)
-
-        # 使用5点中心差分公式提高精度
-        # f'(x) ≈ (f(x-2h) - 8f(x-h) + 8f(x+h) - f(x+2h)) / (12h)
-        for i in range(2, len(signal_data) - 2):
-            differentiated_signal[i] = (
-                                               -signal_data[i + 2] + 8 * signal_data[i + 1] - 8 * signal_data[i - 1] +
-                                               signal_data[i - 2]
-                                       ) / 12
-
-        return differentiated_signal
-
-    def squaring(self, signal_data):
-        """
-        平方函数
-        使所有点为正值，并放大高斜率点
-
-        参数:
-            signal_data: 输入信号
-
-        返回:
-            squared_signal: 平方后的信号
-        """
-        return signal_data ** 2
-
-    def moving_window_integration(self, signal_data, window_size=None):
-        """
-        优化的移动窗口积分器
-        动态调整窗口大小以适应不同心率
-
-        参数:
-            signal_data: 输入信号
-            window_size: 窗口大小 (样本数)，默认自适应
-
-        返回:
-            integrated_signal: 积分后的信号
-        """
-        if window_size is None:
-            # 自适应窗口大小 - 基于QRS波群的典型宽度
-            # 对于360Hz采样率，QRS波群约80ms，使用略大的窗口以确保完整覆盖
-            window_size = int(0.080 * self.fs)  # 80ms窗口，更适合QRS波群
-
-        # 使用卷积实现高效的移动平均积分
-        window = np.ones(window_size) / window_size
-        integrated_signal = np.convolve(signal_data, window, mode='same')
-
-        return integrated_signal
-
-    def detect_qrs_peaks(self, signal_data, signal_name="MLII"):
-        """
-        检测QRS波峰值
-        使用双阈值检测算法
-
-        参数:
-            signal_data: 输入ECG信号
-            signal_name: 信号名称（用于自适应参数）
-
-        返回:
-            qrs_peaks: QRS波峰值位置索引
-        """
-
-        # 步骤1: 带通滤波 - 传递signal_name以使用自适应参数
-        self.filtered_signal = self.bandpass_filter(signal_data, signal_name=signal_name)
-
-        # 步骤2: 微分
-        self.differentiated_signal = self.derivative(self.filtered_signal)
-
-        # 步骤3: 平方
-        self.squared_signal = self.squaring(self.differentiated_signal)
-
-        # 步骤4: 移动窗口积分
-        self.integrated_signal = self.moving_window_integration(self.squared_signal)
-
-        # 步骤5: QRS检测 - 传递信号名称用于自适应阈值
-        self.qrs_peaks = self._threshold_detection(signal_name=signal_name)
-
-        return self.qrs_peaks
-
-    def _threshold_detection(self, signal_name="MLII"):
-        """
-        滑动窗口阈值检测算法
-        使用自适应的滑动窗口来适应信号变化
-        """
-        if self.integrated_signal is None:
-            return []
-
-        # 获取该导联的自适应参数
-        params = self.get_filter_parameters(signal_name)
-        threshold_factor = params.get('threshold_factor', 1.5)
-
-        # 设置滑动窗口参数
-        window_size = int(8 * self.fs)  # 10秒窗口
-        overlap_size = int(4 * self.fs)  # 5秒重叠
-
-        # 设置自适应不应期
-        if signal_name == 'V1':
-            refractory_period = int(0.15 * self.fs)  # 150ms
-        elif signal_name in ['V2', 'V3']:
-            refractory_period = int(0.17 * self.fs)  # 170ms
-        else:
-            refractory_period = int(0.2 * self.fs)  # 200ms
-
-        all_peaks = []
-
-        # 滑动窗口处理
-        for start_idx in range(0, len(self.integrated_signal), overlap_size):
-            end_idx = min(start_idx + window_size, len(self.integrated_signal))
-
-            if end_idx - start_idx < overlap_size:  # 最后一个窗口太小就跳过
-                break
-
-            # 提取当前窗口的信号
-            window_signal = self.integrated_signal[start_idx:end_idx]
-
-            # 计算当前窗口的阈值
-            window_mean = np.mean(window_signal)
-            window_std = np.std(window_signal)
-            current_threshold = window_mean + threshold_factor * window_std
-
-            # 在窗口内检测峰值
-            window_peaks = []
-            for i in range(len(window_signal)):
-                actual_idx = start_idx + i
-                current_value = window_signal[i]
-
-                # 检查是否超过阈值
-                if current_value > current_threshold:
-                    # 检查是否在不应期内（相对于整个信号的峰值）
-                    if len(all_peaks) == 0 or (actual_idx - all_peaks[-1]) > refractory_period:
-                        # 检查是否在窗口峰值的不应期内
-                        if len(window_peaks) == 0 or (i - window_peaks[-1]) > int(0.2 * self.fs):
-                            # 在小窗口内寻找真正的峰值
-                            search_window = min(10, len(window_signal) - i - 1)
-                            local_peak_idx = i
-
-                            for j in range(max(0, i - 5), min(len(window_signal), i + search_window + 1)):
-                                if window_signal[j] > window_signal[local_peak_idx]:
-                                    local_peak_idx = j
-
-                            # 添加找到的峰值
-                            if local_peak_idx not in window_peaks:
-                                window_peaks.append(local_peak_idx)
-                                all_peaks.append(start_idx + local_peak_idx)
-
-        # 峰值精确定位 - 在原始滤波信号上找到最大值
-        refined_peaks = []
-        search_window = int(0.03 * self.fs)  # 30ms搜索窗口
-
-        for peak in all_peaks:
-            search_start = max(0, peak - search_window)
-            search_end = min(len(self.filtered_signal), peak + search_window)
-
-            if search_start < search_end:
-                search_segment = self.filtered_signal[search_start:search_end]
-                if len(search_segment) > 0:
-                    local_max_idx = np.argmax(search_segment) + search_start
-                    # 避免重复检测
-                    if len(refined_peaks) == 0 or (local_max_idx - refined_peaks[-1]) > int(0.15 * self.fs):
-                        refined_peaks.append(local_max_idx)
-
-        return refined_peaks
-
-    def _threshold_detection_global(self, signal_name="MLII"):
-        """
-        全局阈值检测算法（原版保留）
-        根据不同导联使用不同的阈值参数和不应期
-        """
-        if self.integrated_signal is None:
-            return []
-
-        # 获取该导联的自适应参数
-        params = self.get_filter_parameters(signal_name)
-
-        # 设置自适应阈值 - 基于信号的统计特性和导联特性
-        signal_mean = np.mean(self.integrated_signal)
-        signal_std = np.std(self.integrated_signal)
-        threshold_factor = params.get('threshold_factor', 1.5)
-        threshold = signal_mean + threshold_factor * signal_std
-
-        # 设置自适应不应期 - V1导联使用更短的不应期以支持更高心率
-        if signal_name == 'V1':
-            refractory_period = int(0.15 * self.fs)  # 150ms，针对V1导联的小R波
-        elif signal_name in ['V2', 'V3']:
-            refractory_period = int(0.17 * self.fs)  # 170ms，过渡区导联
-        else:
-            refractory_period = int(0.2 * self.fs)  # 200ms，标准不应期
-
-        peaks = []
-
-        # 遍历信号寻找超过阈值的峰值
-        for i in range(len(self.integrated_signal)):
-            current_value = self.integrated_signal[i]
-
-            # 检查是否超过阈值
-            if current_value > threshold:
-                # 检查是否在不应期内
-                if len(peaks) == 0 or (i - peaks[-1]) > refractory_period:
-                    # 在小窗口内寻找真正的峰值
-                    search_window = min(10, len(self.integrated_signal) - i - 1)
-                    local_peak = i
-
-                    for j in range(max(0, i - 5), min(len(self.integrated_signal), i + search_window + 1)):
-                        if self.integrated_signal[j] > self.integrated_signal[local_peak]:
-                            local_peak = j
-
-                    # 添加找到的峰值
-                    if local_peak not in peaks:
-                        peaks.append(local_peak)
-
-        # 简单的峰值精确定位 - 在原始滤波信号上找到最大值
-        refined_peaks = []
-        search_window = int(0.03 * self.fs)  # 30ms搜索窗口
-
-        for peak in peaks:
-            search_start = max(0, peak - search_window)
-            search_end = min(len(self.filtered_signal), peak + search_window)
-
-            if search_start < search_end:
-                search_segment = self.filtered_signal[search_start:search_end]
-                if len(search_segment) > 0:
-                    local_max_idx = np.argmax(search_segment) + search_start
-                    refined_peaks.append(local_max_idx)
-                else:
-                    refined_peaks.append(peak)
-            else:
-                refined_peaks.append(peak)
-
-        return refined_peaks
+    def __init__(self, signal_name="MLII"):
+        super().__init__(signal_name=signal_name)
 
     def calculate_heart_rate(self):
         """
@@ -959,7 +636,8 @@ def debug_lead_parameters(target_lead="MLII", record_subset=None, tolerance_ms=5
                 sig_name = input_data.sig_name
                 if target_lead in sig_name:
                     target_records.append(num)
-            except:
+            except Exception as e:
+                print(e)
                 continue
         record_subset = target_records
     else:
@@ -971,7 +649,8 @@ def debug_lead_parameters(target_lead="MLII", record_subset=None, tolerance_ms=5
                 sig_name = input_data.sig_name
                 if target_lead in sig_name:
                     target_records.append(num)
-            except:
+            except Exception as e:
+                print(e)
                 continue
         record_subset = target_records
 
@@ -1010,25 +689,14 @@ def debug_lead_parameters(target_lead="MLII", record_subset=None, tolerance_ms=5
                 sig_sample = annotation.sample[1:]
 
                 # 创建检测器并临时修改MLII参数
-                qrs_detector = PanTomkinsQRSDetector(fs=fs)
-
-                # 临时修改get_filter_parameters方法的返回值
-                original_get_filter_parameters = qrs_detector.get_filter_parameters
-
-                def temp_get_filter_parameters(signal_name="MLII"):
-                    if signal_name == target_lead:
-                        return {
-                            'low': config['low'],
-                            'high': config['high'],
-                            'threshold_factor': config['threshold_factor']
-                        }
-                    else:
-                        return original_get_filter_parameters(signal_name)
-
-                qrs_detector.get_filter_parameters = temp_get_filter_parameters
+                qrs_detector = PanTomkinsQRSDetector(signal_name=target_lead)
+                qrs_detector.fs = fs
+                qrs_detector.params['low'] = config['low']
+                qrs_detector.params['high'] = config['high']
+                qrs_detector.params['threshold_factor'] = config['threshold_factor']
 
                 # 进行检测
-                _ = qrs_detector.detect_qrs_peaks(signal, signal_name=target_lead)
+                _ = qrs_detector.detect_qrs_peaks(signal)
 
                 # 统计结果
                 stats = qrs_detector.compare_with_annotations(sig_sample, tolerance_ms=tolerance_ms)
@@ -1191,84 +859,6 @@ def debug_lead_parameters(target_lead="MLII", record_subset=None, tolerance_ms=5
     return config_results
 
 
-def debug_all_leads(record_subset=None, tolerance_ms=50):
-    """
-    调试所有导联的参数配置
-
-    参数:
-        record_subset: 要测试的记录子集，如果为None则使用所有可用记录
-        tolerance_ms: 匹配容差（毫秒）
-    """
-    # 定义要测试的所有导联
-    all_leads = ['MLII', 'V1', 'V2', 'V5', 'I', 'aVR', 'aVL', 'aVF']
-
-    # 存储所有导联的最佳配置
-    best_configs_per_lead = {}
-
-    print("开始调试所有导联的参数配置...")
-    print("=" * 80)
-
-    for lead in all_leads:
-        print(f"\n{'=' * 20} 正在调试 {lead} 导联 {'=' * 20}")
-
-        try:
-            # 调用单个导联的调试函数
-            results = debug_lead_parameters(target_lead=lead, record_subset=record_subset, tolerance_ms=tolerance_ms)
-
-            if results:
-                # 保存最佳配置
-                best_config = results[0]  # 已按F1分数排序，第一个是最好的
-                best_configs_per_lead[lead] = best_config
-                print(f"\n{lead}导联最佳配置: {best_config['name']}")
-                print(
-                    f"  参数: low={best_config['params']['low']}Hz, high={best_config['params']['high']}Hz, threshold_factor={best_config['params']['threshold_factor']}")
-                print(f"  F1分数: {best_config['f1_score']:.4f}")
-                print(f"  检测率: {best_config['detection_rate']:.2f}%")
-            else:
-                print(f"{lead}导联：没有找到可用记录或测试失败")
-
-        except Exception as e:
-            print(f"{lead}导联调试过程中出现错误: {str(e)}")
-            continue
-
-        print(f"\n{'=' * 60}")
-
-    # 生成总体报告
-    print(f"\n{'=' * 20} 总体对比报告 {'=' * 20}")
-
-    # 按F1分数排序所有最佳配置
-    sorted_configs = sorted(best_configs_per_lead.items(), key=lambda x: x[1]['f1_score'], reverse=True)
-
-    print(f"\n各导联最佳配置排名 (按F1分数排序):")
-    print("-" * 80)
-    print(f"{'排名':<4} {'导联':<8} {'配置名称':<15} {'检测率(%)':<10} {'敏感度':<10} {'精确率':<10} {'F1分数':<10}")
-    print("-" * 80)
-
-    for i, (lead, config) in enumerate(sorted_configs, 1):
-        print(f"{i:<4} {lead:<8} {config['name']:<15} {config['detection_rate']:<10.2f} {config['sensitivity']:<10.4f} "
-              f"{config['precision']:<10.4f} {config['f1_score']:<10.4f}")
-
-    # 性能最好的导联详细分析
-    if sorted_configs:
-        best_lead, best_config = sorted_configs[0]
-        print(f"\n性能最佳导联: {best_lead}")
-        print("=" * 50)
-        print(f"最佳配置: {best_config['name']}")
-        print(f"  参数设置:")
-        print(f"    低频截止: {best_config['params']['low']} Hz")
-        print(f"    高频截止: {best_config['params']['high']} Hz")
-        print(f"    阈值因子: {best_config['params']['threshold_factor']}")
-        print(f"  性能指标:")
-        print(f"    处理记录数: {best_config['records_processed']}")
-        print(f"    检测率: {best_config['detection_rate']:.2f}%")
-        print(f"    敏感度: {best_config['sensitivity']:.4f}")
-        print(f"    精确率: {best_config['precision']:.4f}")
-        print(f"    F1分数: {best_config['f1_score']:.4f}")
-        print(f"    时间误差: {best_config['avg_time_error']:.2f}±{best_config['std_time_error']:.2f} ms")
-
-    return best_configs_per_lead
-
-
 def main():
     # MIT-BIH - 单通道检测
     # 定义要检测的目标通道
@@ -1324,7 +914,8 @@ def main():
                 print("标注数量不足，无法计算平均心率")
 
             # 创建QRS检测器实例
-            qrs_detector = PanTomkinsQRSDetector(fs=fs)
+            qrs_detector = PanTomkinsQRSDetector()
+            qrs_detector.fs = fs
 
             # 进行QRS检测
             qrs_peaks = qrs_detector.detect_qrs_peaks(signal, signal_name=target_lead)
@@ -1447,7 +1038,7 @@ if __name__ == "__main__":
     if 1:
         # 参数调试模式 - 单个导联
         # 设置要测试的导联和记录
-        target_lead = "V5"  # 可以修改为 "V1", "V2", "V5" 等其他导联
+        target_lead = "MLII"  # 可以修改为 "V1", "V2", "V5" 等其他导联
         print(f"运行{target_lead}导联参数调试...")
         # 可以指定要测试的记录子集，例如：['100', '101', '103']
         debug_lead_parameters(target_lead=target_lead, tolerance_ms=50)

@@ -1,8 +1,5 @@
 from collections import deque
-
 import numpy as np
-import matplotlib.pyplot as plt
-from requests.packages import target
 from scipy import signal as scipy_signal
 import wfdb
 
