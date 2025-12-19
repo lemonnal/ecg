@@ -1,5 +1,8 @@
 from collections import deque
+
 import numpy as np
+import matplotlib.pyplot as plt
+from requests.packages import target
 from scipy import signal as scipy_signal
 import wfdb
 
@@ -90,19 +93,14 @@ def get_signal_params(signal_name):
             'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
             'threshold_factor': 1.4
         }
-    elif signal_name == 'aaa':
+    else:
         signal_params = {
             'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.080,
             'detection_window_size': 8.0, 'overlap_window_size': 4.0, 'refractory_period': 0.20,
             'threshold_factor': 1.4
         }
-    else:
-        signal_name = {}
         
-        
-        
-    
     return signal_params
 
 class PanTomkinsQRSDetectorOffline:
@@ -110,7 +108,7 @@ class PanTomkinsQRSDetectorOffline:
     基于Pan-Tomkins算法的QRS波检测器
     """
 
-    def __init__(self, signal_name="MLII"):
+    def __init__(self, fs=360, signal_name="MLII"):
         """
         初始化QRS检测器
 
@@ -118,7 +116,7 @@ class PanTomkinsQRSDetectorOffline:
             fs: 采样频率 (Hz)
             signal_name: ECG导联名称 (如 "MLII", "V1", "V2" 等)
         """
-        self.fs = 360
+        self.fs = fs
         self.signal = None
         self.filtered_signal = None
         self.differentiated_signal = None
@@ -311,7 +309,7 @@ class PanTomkinsQRSDetectorOnline:
     基于Pan-Tomkins算法的QRS波检测器
     """
 
-    def __init__(self, signal_name="MLII"):
+    def __init__(self, fs=360, signal_name="MLII"):
         """
         初始化QRS检测器
 
@@ -319,7 +317,7 @@ class PanTomkinsQRSDetectorOnline:
             fs: 采样频率 (Hz)
             signal_name: ECG导联名称 (如 "MLII", "V1", "V2" 等)
         """
-        self.fs = 360
+        self.fs = fs
         self.signal = deque()
         self.filtered_signal = None
         self.differentiated_signal = None
