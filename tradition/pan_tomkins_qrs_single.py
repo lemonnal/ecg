@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from scipy import signal as scipy_signal
 import wfdb
 from tqdm import tqdm
-from QRSDetector.pan_tomkins_method import PanTomkinsQRSDetectorOffline
+from QRSDetector.Method import PanTomkinsQRSDetectorOffline
 
 # Set default font for better English display
 plt.rcParams['font.sans-serif'] = ['Arial', 'DejaVu Sans']
