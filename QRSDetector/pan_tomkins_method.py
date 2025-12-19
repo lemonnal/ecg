@@ -108,7 +108,7 @@ class PanTomkinsQRSDetectorOffline:
     基于Pan-Tomkins算法的QRS波检测器
     """
 
-    def __init__(self, fs=360, signal_name="MLII"):
+    def __init__(self, signal_name="MLII"):
         """
         初始化QRS检测器
 
@@ -116,7 +116,7 @@ class PanTomkinsQRSDetectorOffline:
             fs: 采样频率 (Hz)
             signal_name: ECG导联名称 (如 "MLII", "V1", "V2" 等)
         """
-        self.fs = fs
+        self.fs = 360
         self.signal = None
         self.filtered_signal = None
         self.differentiated_signal = None
@@ -309,7 +309,7 @@ class PanTomkinsQRSDetectorOnline:
     基于Pan-Tomkins算法的QRS波检测器
     """
 
-    def __init__(self, fs=360, signal_name="MLII"):
+    def __init__(self, signal_name="MLII"):
         """
         初始化QRS检测器
 
@@ -317,7 +317,7 @@ class PanTomkinsQRSDetectorOnline:
             fs: 采样频率 (Hz)
             signal_name: ECG导联名称 (如 "MLII", "V1", "V2" 等)
         """
-        self.fs = fs
+        self.fs = 360
         self.signal = deque()
         self.filtered_signal = None
         self.differentiated_signal = None
