@@ -324,23 +324,6 @@ class PanTomkinsQRSDetectorOnline:
         self.qrs_peaks = []
         self.params = get_signal_params(signal_name=signal_name)
 
-    def update_signal(self, samples):
-        """
-        更新信号缓冲区
-        接收蓝牙回调的新数据并添加到信号队列中
-
-        参数:
-            samples: 新接收的采样数据列表 (单位: mV)
-        """
-        # 将新样本添加到deque中，自动淘汰旧数据
-        for sample in samples:
-            self.signal.append(sample)
-        print(len(self.signal))
-        print(self.signal)
-
-        # 可选: 当信号缓冲区更新时自动进行QRS检测
-        # self.detect_qrs_peaks()
-
     def bandpass_filter(self, signal_data):
         """
         自适应带通滤波器
@@ -522,6 +505,42 @@ class PanTomkinsQRSDetectorOnline:
 
         return self.qrs_peaks
 
+    def update_signal_and_plot(self, samples):
+        """
+        更新信号缓冲区
+        接收蓝牙回调的新数据并添加到信号队列中
+
+        参数:
+            samples: 新接收的采样数据列表 (单位: mV)
+        """
+        # 将新样本添加到deque中，自动淘汰旧数据
+        for sample in samples:
+            self.signal.append(sample)
+            print(len(self.signal))
+
+            if len(self.signal) > 200:
+                #当信号缓冲区更新时自动进行QRS检测
+                peaks = self.detect_qrs_peaks()
+                print(peaks)
+
+                line.set_ydata(self.signal)
+                line.set_xdata(range(len(self.signal)))
+
+                # 清除之前的红点
+                for artist in ax.lines[1:]:
+                    artist.remove()
+
+                if len(peaks) > 0:
+                    # 在QRS波处画红圈
+                    for v in peaks:
+                        v += 3
+                        ax.plot(v, self.signal[v], 'ro', markersize=8)
+
+                ax.set_ylim(11, 15)
+                ax.relim()
+                ax.autoscale_view()
+                plt.pause(0.001)  # 更新图形，可以根据需要调整刷新频率
+
 import asyncio
 from bleak import BleakScanner
 from bleak import BleakClient
@@ -554,13 +573,12 @@ elif device == "PW-ECG-SL":
 voltage_mV_max = -0xffffff
 voltage_mV_min = 0xffffff
 # 创建空的数据列表
-data_list = deque(maxlen=300)  # 保持最新的200个数据点
+data_list = deque(maxlen=300)  # 保持最新的300个数据点
 # 创建一个图形窗口
 plt.ion()  # 开启交互模式
 fig, ax = plt.subplots()
 line, = ax.plot([])
 ax.set_ylim(0.0, 0.05)  # 设置y轴范围
-
 class QingXunBlueToothCollector:
     def __init__(self, client=None):
         self.data_queue = deque(maxlen=300)
@@ -568,8 +586,7 @@ class QingXunBlueToothCollector:
         self.data = []
         self.qrs_detector = PanTomkinsQRSDetectorOnline()
 
-    # 断开连接回调函数
-    def handle_disconnect(self, client):
+    def handle_disconnect(self, client):  # 断开连接回调函数
         print(f"设备已断开连接")
 
     def match_nus_device(self, device: BLEDevice, adv: AdvertisementData):
@@ -671,34 +688,18 @@ class QingXunBlueToothCollector:
             samples.append(voltage_mV)
 
         return samples
-    # 接收数据回调函数
-    def handle_rx(self, sender, data):
+
+    def handle_rx(self, sender, data): # 接收数据回调函数
         global voltage_mV_max
         global voltage_mV_min
+        global ax
 
         data_samples = self.packet_decode(data)
+        data_samples = data_samples[3:-2]
 
         # 将数据传递给QRS检测器
         if len(data_samples) > 0:
-            self.qrs_detector.update_signal(data_samples)
-
-        try:
-            voltage_mV_max = max(data_samples) if voltage_mV_max < max(data_samples) else voltage_mV_max
-            voltage_mV_min = min(data_samples) if voltage_mV_min > min(data_samples) else voltage_mV_min
-            # print(voltage_mV_max, voltage_mV_min)
-            voltage_delta = voltage_mV_max - voltage_mV_min
-
-            for sample in data_samples:
-                value = sample
-                data_list.append(value)
-                line.set_ydata(data_list)
-                line.set_xdata(range(len(data_list)))
-                ax.set_ylim(voltage_mV_min - 0.2 * voltage_delta, voltage_mV_max + 0.2 * voltage_delta)
-                ax.relim()
-                ax.autoscale_view()
-                plt.pause(0.01)  # 更新图形，可以根据需要调整刷新频率
-        except ValueError:
-            pass
+            self.qrs_detector.update_signal_and_plot(data_samples)
 
 
 async def main():
