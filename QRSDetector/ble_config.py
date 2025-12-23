@@ -8,17 +8,34 @@ import matplotlib.pyplot as plt
 from collections import deque
 import struct
 
-# E2:1B:A5:DB:DE:EA: PW-ECG-SL
-# address = "E2:1B:A5:DB:DE:EA"
-UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-68716563686f"
-UART_RX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-68716563686f"
-UART_TX_CHAR_UUID = "6e400003-b5a3-f393-e0a9-68716563686f"
+QINGXUN_UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-68716563686f"
+QINGXUN_UART_RX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-68716563686f"
+QINGXUN_UART_TX_CHAR_UUID = "6e400003-b5a3-f393-e0a9-68716563686f"
+
+device = "AAA-TEST"
+if device == "AAA-TEST":
+    device_param = {
+        "name": device,
+        "address": "EC:7A:26:9D:81:3F",
+        "service_uuid": QINGXUN_UART_SERVICE_UUID,
+        "rx_uuid": QINGXUN_UART_RX_CHAR_UUID,
+        "tx_uuid": QINGXUN_UART_TX_CHAR_UUID,
+    }
+elif device == "PW-ECG-SL":
+    device_param = {
+        "name": device,
+        "address": "E2:1B:A5:DB:DE:EA",
+        "service_uuid": QINGXUN_UART_SERVICE_UUID,
+        "rx_uuid": QINGXUN_UART_RX_CHAR_UUID,
+        "tx_uuid": QINGXUN_UART_TX_CHAR_UUID,
+    }
+
 
 voltage_mV_max = -0xffffff
 voltage_mV_min = 0xffffff
 
 # 创建空的数据列表
-data_list = deque(maxlen=100)  # 保持最新的100个数据点
+data_list = deque(maxlen=300)  # 保持最新的100个数据点
 # 创建一个图形窗口
 plt.ion()  # 开启交互模式
 fig, ax = plt.subplots()
@@ -28,17 +45,36 @@ ax.set_ylim(0.0, 0.05)  # 设置y轴范围，根据你的数据范围进行调�
 
 class QingXunBlueToothCollector:
     def __init__(self, client=None):
-        self.data_queue = deque(maxlen=100)
+        self.data_queue = deque(maxlen=300)
         self.latest_samples = []
         self.data = []
+        self.qrs_detector = None  # QRS检测器实例
+
+    def set_qrs_detector(self, qrs_detector):
+        """
+        设置QRS检测器实例
+        参数:
+            qrs_detector: PanTomkinsQRSDetectorOnline实例
+        """
+        self.qrs_detector = qrs_detector
 
     # 断开连接回调函数
     def handle_disconnect(self, client):
         print(f"设备已断开连接")
 
-    def match_nus_uuid(self, device: BLEDevice, adv: AdvertisementData):
-        if adv and adv.service_uuids and UART_SERVICE_UUID.lower() in [uuid.lower() for uuid in adv.service_uuids]:
-            print(adv.service_uuids)
+    def match_nus_device(self, device: BLEDevice, adv: AdvertisementData):
+        # 优先通过MAC地址匹配
+        if device.address == "EC:7A:26:9D:81:3F":
+            print(f"通过MAC地址匹配到设备: {device.name or '未知'} ({device.address})")
+            return True
+        # 优先通过设备名称匹配
+        if device.name and "AAA-TEST" in device.name:
+            print(f"通过名称匹配到设备: {device.name} ({device.address})")
+            return True
+        # 如果名称和MAC地址都匹配失败，尝试UUID匹配
+        if adv and adv.service_uuids and device_param["service_uuid"].lower() in [uuid.lower() for uuid in adv.service_uuids]:
+            print(f"通过UUID匹配到设备: {device.name or '未知'} ({device.address})")
+            print(f"  服务UUIDs: {adv.service_uuids}")
             return True
         return False
 
@@ -104,75 +140,14 @@ class QingXunBlueToothCollector:
         data.extend(struct.pack('<Q', timestamp))
         packet = self.build_protocol_packet(0x0001, data)
         print(f"发送开启采集指令: {[f'0x{b:02X}' for b in packet]}")
-        respones = await client.write_gatt_char(UART_RX_CHAR_UUID, packet)
-        if respones:
-            print("开始采集指令发送成功")
-        else:
-            print(f"构建开启采集指令失败")
+        respones = await client.write_gatt_char(device_param["rx_uuid"], packet)
+        print("开始采集指令发送成功")
         return respones
 
     # 接收数据回调函数
     def handle_rx(self, sender, data):
         global voltage_mV_max
         global voltage_mV_min
-
-        if 0: # 包含全部解包结构，不一定使用
-            # 解析协议包结构: 功能码(2) + 数据长度(2) + 数据内容(238) + CRC16(2) = 244字节
-            # 1. 提取功能码 (2)
-            feature_code = data[0:2]
-
-            # 2. 提取数据长度 (2)
-            data_len = struct.unpack('<H', data[2:4])[0]
-
-            # 3. 提取数据内容
-            samples = []
-            sample_data_start = 4  # 采样数据起始位置
-            for i in range(119):
-                sample_offset = sample_data_start + i * 2
-                if sample_offset + 2 > len(data) - 2:  # 减去校验和
-                    break
-
-                # 读取小端格式的16位整数
-                sample_value = struct.unpack('<H', data[sample_offset:sample_offset + 2])[0]
-
-                # 转换为电压值 (μV) - 单导联 0.288 12导联 0.318
-                voltage_uV = sample_value * 0.288
-                samples.append({
-                    'raw_adc': sample_value,
-                    'voltage_uV': voltage_uV,
-                    'voltage_mV': voltage_uV / 1000.0
-                })
-            # CRC校验和 (最后2字节)
-            crc_checksum = struct.unpack('<H', data[-2:])[0]
-
-            parsed_data = {
-                'feature_code': feature_code.hex(),
-                'data_len': data_len,
-                'samples': samples,
-                'sample_count': len(samples),
-                'crc_checksum': f'{crc_checksum:04x}',
-            }
-            for key, value in parsed_data.items():
-                print(f"{key}: {value}")
-            hex_str = ' '.join(f'{b:02x}' for b in data)
-            print(f"十六进制: {hex_str} (共{len(data)}字节)")
-
-            # 假设 samples 是一个字典列表
-            voltage_mV_max = max([sample.get('voltage_mV') for sample in samples if 'voltage_mV' in sample])
-            voltage_mV_min = min([sample.get('voltage_mV') for sample in samples if 'voltage_mV' in sample])
-
-            try:
-                for sample in samples:
-                    value = sample['voltage_mV']
-                    data_list.append(value)
-                    line.set_ydata(data_list)
-                    line.set_xdata(range(len(data_list)))
-                    ax.set_ylim(voltage_mV_min - 0.1 * abs(voltage_mV_min), voltage_mV_max + 0.1 * abs(voltage_mV_max))
-                    ax.relim()
-                    ax.autoscale_view()
-                    # plt.pause(0.01)  # 更新图形，可以根据需要调整刷新频率
-            except ValueError:
-                pass
 
         # 只提取数据内容
         samples = []
@@ -188,6 +163,10 @@ class QingXunBlueToothCollector:
             # 转换为电压值 (μV) - 单导联 0.288 12导联 0.318
             voltage_mV = sample_value * 0.288 / 1000.0
             samples.append(voltage_mV)
+
+        # 将数据传递给QRS检测器
+        if self.qrs_detector and len(samples) > 0:
+            self.qrs_detector.update_signal(samples)
 
         try:
             voltage_mV_max = max(samples) if voltage_mV_max < max(samples) else voltage_mV_max
@@ -211,19 +190,36 @@ class QingXunBlueToothCollector:
 
 
 async def main():
+    # 首先扫描并输出所有附近的蓝牙设备
+    print("正在扫描所有附近的蓝牙设备...")
+    all_devices = await BleakScanner.discover(timeout=10.0)
+    print(f"\n找到 {len(all_devices)} 个蓝牙设备:\n")
+
+    for d in all_devices:
+        print(f"设备名称: {d.name or '未知'}")
+        print(f"MAC地址: {d.address}")
+        print("-" * 60)
+
+    print("\n" + "=" * 60)
+    print("开始搜索目标设备...")
+
     # 搜索设备, 查看是否匹配NUS UUID，找到后可尝试建立连接，进行读写。
     Collector = QingXunBlueToothCollector()
-    device = await BleakScanner.find_device_by_filter(Collector.match_nus_uuid)
+    device = await BleakScanner.find_device_by_filter(Collector.match_nus_device)
     if not device:
-        print("未找到支持NUS的设备")
+        print("未找到目标设备")
+        print("\n提示: 请检查:")
+        print("  1. 设备是否已开启")
+        print("  2. 设备名称是否为 'AAA-TEST'")
+        print("  3. MAC地址是否为 'EC:7A:26:9D:81:3F'")
         return
     else:
-        print(f"找到设备: {device.address}")
+        print(f"\n成功找到设备: {device.address}")
 
     # 创建BleakClient客户端，连接后进行串口操作
     async with BleakClient(device, disconnected_callback=Collector.handle_disconnect) as client:
         # 发送开始监听指令
-        await client.start_notify(UART_TX_CHAR_UUID, Collector.handle_rx)
+        await client.start_notify(device_param["tx_uuid"], Collector.handle_rx)
         print("Enable listening Callback Function")
         # 发送开始采集指令
         await Collector.start_collection(client, collect_enable=1, timestamp=0)
