@@ -38,10 +38,10 @@ voltage_mV_min = 0xffffff
 plt.ion()  # 开启交互模式
 fig, ax = plt.subplots()
 line, = ax.plot([])
-ax.set_ylim(0.0, 0.05)  # 设置y轴范围
+ax.set_ylim(10, 15)  # 设置y轴范围
 
 
-def get_signal_params(signal_name):
+def get_signal_params_offline(signal_name):
     # 基于导联特性的参数
     if signal_name == 'V1':
         signal_params = {
@@ -137,6 +137,103 @@ def get_signal_params(signal_name):
         
     return signal_params
 
+
+def get_signal_params_online(signal_name):
+    # 基于导联特性的参数
+    if signal_name == 'V1':
+        signal_params = {
+            'low': 1, 'high': 50.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.100,
+            'refractory_period': 0.20,
+            'threshold_factor': 1.2,
+        }
+    elif signal_name == 'V2':
+        signal_params = {
+            'low': 3, 'high': 30.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.100,
+            'refractory_period': 0.20,
+            'threshold_factor': 1.3
+        }
+    elif signal_name == 'V3':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.100,
+            'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'V4':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.100,
+            'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'V5':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.100,
+            'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'V6':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.100,
+            'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'I':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.100,
+            'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'MLII':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.100,
+            'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'MLIII':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.100,
+            'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'aVR':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.100,
+            'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'aVL':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.100,
+            'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    elif signal_name == 'aVF':
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.100,
+            'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+    else:
+        signal_params = {
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'integration_window_size': 0.100,
+            'refractory_period': 0.20,
+            'threshold_factor': 1.4
+        }
+
+    return signal_params
+
 class PanTomkinsQRSDetectorOffline:
     """
     基于Pan-Tomkins算法的QRS波检测器
@@ -157,7 +254,7 @@ class PanTomkinsQRSDetectorOffline:
         self.squared_signal = None
         self.integrated_signal = None
         self.qrs_peaks = []
-        self.params = get_signal_params(signal_name=signal_name)
+        self.params = get_signal_params_offline(signal_name=signal_name)
 
     def bandpass_filter(self, signal_data):
         """
@@ -238,7 +335,7 @@ class PanTomkinsQRSDetectorOffline:
         # 窗口中的采样点数量
         window_sample = int(self.params['integration_window_size'] * self.fs)
 
-        # 使用卷积实现高效的移动平均积分
+        # 使用卷积实现移动平均积分
         window = np.ones(window_sample) / window_sample
         integrated_signal = np.convolve(signal_data, window, mode='same')
 
@@ -352,14 +449,14 @@ class PanTomkinsQRSDetectorOnline:
             signal_name: ECG导联名称 (如 "MLII", "V1", "V2" 等)
         """
         self.fs = 250
-        self.signal_len = 300
+        self.signal_len = 750
         self.signal = deque([], self.signal_len)
         self.filtered_signal = None
         self.differentiated_signal = None
         self.squared_signal = None
         self.integrated_signal = None
         self.qrs_peaks = []
-        self.params = get_signal_params(signal_name=signal_name)
+        self.params = get_signal_params_online(signal_name=signal_name)
 
     def bandpass_filter(self, signal_data):
         """
@@ -440,7 +537,7 @@ class PanTomkinsQRSDetectorOnline:
         # 窗口中的采样点数量
         window_sample = int(self.params['integration_window_size'] * self.fs)
 
-        # 使用卷积实现高效的移动平均积分
+        # 使用卷积实现移动平均积分
         window = np.ones(window_sample) / window_sample
         integrated_signal = np.convolve(signal_data, window, mode='same')
 
@@ -562,9 +659,9 @@ class PanTomkinsQRSDetectorOnline:
         for sample in samples:
             # 将新样本添加到deque中，自动淘汰旧数据
             self.signal.append(sample)
-            print(len(self.signal))
+            # print(len(self.signal))
 
-            if len(self.signal) > 200:
+            if len(self.signal) > 500:
 
                 #当信号缓冲区更新时自动进行QRS检测
                 peaks = self.detect_qrs_peaks()
@@ -580,14 +677,14 @@ class PanTomkinsQRSDetectorOnline:
                 if len(peaks) > 0:
                     # 在QRS波处画红圈
                     for v in peaks:
-                        v += 4
+                        v += 3
                         ax.plot(v, self.signal[v], 'ro', markersize=8)
 
-                ax.set_ylim(13, 18)
+                ax.set_ylim(10, 20)
                 # ax.set_ylim(voltage_mV_min - 0.2 * voltage_delta, voltage_mV_max + 0.2 * voltage_delta)
                 ax.relim()
                 ax.autoscale_view()
-                plt.pause(0.001)  # 更新图形，可以根据需要调整刷新频率
+                plt.pause(0.01)  # 更新图形，可以根据需要调整刷新频率
 
 
 class QingXunBlueToothCollector:
