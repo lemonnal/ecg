@@ -38,11 +38,25 @@ voltage_mV_max = -0xffffff
 voltage_mV_min = 0xffffff
 
 
-# 创建一个图形窗口
-plt.ion()  # 开启交互模式
-fig, ax = plt.subplots()
-line, = ax.plot([])
-ax.set_ylim(10, 15)  # 设置y轴范围
+# # 创建一个图形窗口
+# plt.ion()  # 开启交互模式
+# fig, ax = plt.subplots()
+# line, = ax.plot([])
+# ax.set_ylim(10, 15)  # 设置y轴范围
+
+# 初始化时创建子图布局
+plt.ion()
+fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(5, 1, figsize=(10, 8), sharex=True)
+line1, = ax1.plot([], 'b-')
+line2, = ax2.plot([], 'g-')
+line3, = ax3.plot([], 'm-')
+line4, = ax4.plot([], 'y-')
+line5, = ax5.plot([], 'k-')
+ax1.set_ylabel('original signal')
+ax2.set_ylabel('filtered signal')
+ax3.set_ylabel('differentiated signal')
+ax4.set_ylabel('squared signal')
+ax5.set_ylabel('integrated signal')
 
 
 def get_signal_params_online(signal_name):
@@ -91,16 +105,16 @@ def get_signal_params_online(signal_name):
         }
     elif signal_name == 'I':
         signal_params = {
-            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'low': 3, 'high': 40.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
-            'refractory_period': 0.20,
-            'threshold_factor': 1.4
+            'refractory_period': 0.40,
+            'threshold_factor': 1.3
         }
     elif signal_name == 'MLII':
         signal_params = {
-            'low': 0.5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'low': 3, 'high': 40.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
-            'refractory_period': 0.30,
+            'refractory_period': 0.40,
             'threshold_factor': 1.3
         }
     elif signal_name == 'MLIII':
@@ -371,27 +385,85 @@ class PanTomkinsQRSDetectorOnline:
             self.signal.append(sample)
             # print(len(self.signal))
 
+            # if len(self.signal) > 500:
+            #     #当信号缓冲区更新时自动进行QRS检测
+            #     peaks = self.detect_qrs_peaks()
+            #     print(peaks)
+            #
+            #     line.set_ydata(self.signal)
+            #     line.set_xdata(range(len(self.signal)))
+            #
+            #     # 清除之前的红点
+            #     for artist in ax.lines[1:]:
+            #         artist.remove()
+            #
+            #     if len(peaks) > 0:
+            #         # 在QRS波处画红圈
+            #         for v in peaks:
+            #             ax.plot(v, self.signal[v], 'ro', markersize=8)
+            #
+            #     ax.set_ylim(voltage_mV_min - 0.2 * voltage_delta, voltage_mV_max + 0.2 * voltage_delta)
+            #     ax.relim()
+            #     ax.autoscale_view()
+            #     plt.pause(0.01)  # 更新图形，可以根据需要调整刷新频率
+
+
             if len(self.signal) > 500:
-                #当信号缓冲区更新时自动进行QRS检测
                 peaks = self.detect_qrs_peaks()
                 print(peaks)
 
-                line.set_ydata(self.signal)
-                line.set_xdata(range(len(self.signal)))
+                # 更新原始信号子图
+                line1.set_ydata(self.signal)
+                line1.set_xdata(range(len(self.signal)))
+                ax1.set_ylim(np.min(self.signal), np.max(self.signal))
 
-                # 清除之前的红点
-                for artist in ax.lines[1:]:
-                    artist.remove()
+                # 更新滤波信号子图
+                if self.filtered_signal is not None:
+                    line2.set_ydata(self.filtered_signal)
+                    line2.set_xdata(range(len(self.filtered_signal)))
+                    ax2.set_ylim(np.min(self.filtered_signal), np.max(self.filtered_signal))
+
+                # 更新微分信号子图
+                if self.differentiated_signal is not None:
+                    line3.set_ydata(self.differentiated_signal)
+                    line3.set_xdata(range(len(self.differentiated_signal)))
+                    ax3.set_ylim(np.min(self.differentiated_signal), np.max(self.differentiated_signal))
+
+                # 更新平方信号子图
+                if self.squared_signal is not None:
+                    line4.set_ydata(self.squared_signal)
+                    line4.set_xdata(range(len(self.squared_signal)))
+                    ax4.set_ylim(np.min(self.squared_signal), np.max(self.squared_signal))
+
+                # 更新积分信号子图
+                if self.integrated_signal is not None:
+                    line5.set_ydata(self.integrated_signal)
+                    line5.set_xdata(range(len(self.integrated_signal)))
+                    ax5.set_ylim(np.min(self.integrated_signal), np.max(self.integrated_signal))
+
+                # 清除并重画红点
+                for axis in [ax1, ax2, ax3, ax4, ax5]:
+                    for artist in axis.lines[1:]:
+                        artist.remove()
 
                 if len(peaks) > 0:
-                    # 在QRS波处画红圈
                     for v in peaks:
-                        ax.plot(v, self.signal[v], 'ro', markersize=8)
+                        ax1.plot(v, self.signal[v], 'ro', markersize=8)
+                        if self.filtered_signal is not None:
+                            ax2.plot(v, self.filtered_signal[v], 'ro', markersize=8)
+                        if self.differentiated_signal is not None:
+                            ax3.plot(v, self.differentiated_signal[v], 'ro', markersize=8)
+                        if self.squared_signal is not None:
+                            ax4.plot(v, self.squared_signal[v], 'ro', markersize=8)
+                        if self.integrated_signal is not None:
+                            ax5.plot(v, self.integrated_signal[v], 'ro', markersize=8)
 
-                ax.set_ylim(voltage_mV_min - 0.2 * voltage_delta, voltage_mV_max + 0.2 * voltage_delta)
-                ax.relim()
-                ax.autoscale_view()
-                plt.pause(0.01)  # 更新图形，可以根据需要调整刷新频率
+                # 更新所有子图视图
+                for axis in [ax1, ax2, ax3, ax4, ax5]:
+                    axis.relim()
+                    axis.autoscale_view()
+
+                plt.pause(0.01)
 
 
 class QingXunBlueToothCollector:
