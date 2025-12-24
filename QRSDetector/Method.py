@@ -4,6 +4,43 @@ from scipy import signal as scipy_signal
 import wfdb
 
 
+import asyncio
+from bleak import BleakScanner
+from bleak import BleakClient
+from bleak.backends.device import BLEDevice
+from bleak.backends.scanner import AdvertisementData
+import matplotlib.pyplot as plt
+from collections import deque
+import struct
+QINGXUN_UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-68716563686f"
+QINGXUN_UART_RX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-68716563686f"
+QINGXUN_UART_TX_CHAR_UUID = "6e400003-b5a3-f393-e0a9-68716563686f"
+device = "AAA-TEST"
+if device == "AAA-TEST":
+    device_param = {
+        "name": device,
+        "address": "EC:7A:26:9D:81:3F",
+        "service_uuid": QINGXUN_UART_SERVICE_UUID,
+        "rx_uuid": QINGXUN_UART_RX_CHAR_UUID,
+        "tx_uuid": QINGXUN_UART_TX_CHAR_UUID,
+    }
+elif device == "PW-ECG-SL":
+    device_param = {
+        "name": device,
+        "address": "E2:1B:A5:DB:DE:EA",
+        "service_uuid": QINGXUN_UART_SERVICE_UUID,
+        "rx_uuid": QINGXUN_UART_RX_CHAR_UUID,
+        "tx_uuid": QINGXUN_UART_TX_CHAR_UUID,
+    }
+voltage_mV_max = -0xffffff
+voltage_mV_min = 0xffffff
+# 创建一个图形窗口
+plt.ion()  # 开启交互模式
+fig, ax = plt.subplots()
+line, = ax.plot([])
+ax.set_ylim(0.0, 0.05)  # 设置y轴范围
+
+
 def get_signal_params(signal_name):
     # 基于导联特性的参数
     if signal_name == 'V1':
@@ -314,9 +351,9 @@ class PanTomkinsQRSDetectorOnline:
             fs: 采样频率 (Hz)
             signal_name: ECG导联名称 (如 "MLII", "V1", "V2" 等)
         """
-        self.fs = 360
+        self.fs = 250
         self.signal_len = 300
-        self.signal = deque([0], self.signal_len)
+        self.signal = deque([], self.signal_len)
         self.filtered_signal = None
         self.differentiated_signal = None
         self.squared_signal = None
@@ -506,6 +543,8 @@ class PanTomkinsQRSDetectorOnline:
         return self.qrs_peaks
 
     def update_signal_and_plot(self, samples):
+        global voltage_mV_max
+        global voltage_mV_min
         """
         更新信号缓冲区
         接收蓝牙回调的新数据并添加到信号队列中
@@ -513,12 +552,20 @@ class PanTomkinsQRSDetectorOnline:
         参数:
             samples: 新接收的采样数据列表 (单位: mV)
         """
-        # 将新样本添加到deque中，自动淘汰旧数据
+
+        print(self.params)
+        voltage_mV_max = max(samples) if voltage_mV_max < max(samples) else voltage_mV_max
+        voltage_mV_min = min(samples) if voltage_mV_min > min(samples) else voltage_mV_min
+        # print(voltage_mV_max, voltage_mV_min)
+        voltage_delta = voltage_mV_max - voltage_mV_min
+
         for sample in samples:
+            # 将新样本添加到deque中，自动淘汰旧数据
             self.signal.append(sample)
             print(len(self.signal))
 
             if len(self.signal) > 200:
+
                 #当信号缓冲区更新时自动进行QRS检测
                 peaks = self.detect_qrs_peaks()
                 print(peaks)
@@ -533,58 +580,21 @@ class PanTomkinsQRSDetectorOnline:
                 if len(peaks) > 0:
                     # 在QRS波处画红圈
                     for v in peaks:
-                        v += 3
+                        v += 4
                         ax.plot(v, self.signal[v], 'ro', markersize=8)
 
-                ax.set_ylim(11, 15)
+                ax.set_ylim(13, 18)
+                # ax.set_ylim(voltage_mV_min - 0.2 * voltage_delta, voltage_mV_max + 0.2 * voltage_delta)
                 ax.relim()
                 ax.autoscale_view()
                 plt.pause(0.001)  # 更新图形，可以根据需要调整刷新频率
 
-import asyncio
-from bleak import BleakScanner
-from bleak import BleakClient
-from bleak.backends.device import BLEDevice
-from bleak.backends.scanner import AdvertisementData
-import struct
-import matplotlib.pyplot as plt
-from collections import deque
-import struct
-QINGXUN_UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-68716563686f"
-QINGXUN_UART_RX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-68716563686f"
-QINGXUN_UART_TX_CHAR_UUID = "6e400003-b5a3-f393-e0a9-68716563686f"
-device = "AAA-TEST"
-if device == "AAA-TEST":
-    device_param = {
-        "name": device,
-        "address": "EC:7A:26:9D:81:3F",
-        "service_uuid": QINGXUN_UART_SERVICE_UUID,
-        "rx_uuid": QINGXUN_UART_RX_CHAR_UUID,
-        "tx_uuid": QINGXUN_UART_TX_CHAR_UUID,
-    }
-elif device == "PW-ECG-SL":
-    device_param = {
-        "name": device,
-        "address": "E2:1B:A5:DB:DE:EA",
-        "service_uuid": QINGXUN_UART_SERVICE_UUID,
-        "rx_uuid": QINGXUN_UART_RX_CHAR_UUID,
-        "tx_uuid": QINGXUN_UART_TX_CHAR_UUID,
-    }
-voltage_mV_max = -0xffffff
-voltage_mV_min = 0xffffff
-# 创建空的数据列表
-data_list = deque(maxlen=300)  # 保持最新的300个数据点
-# 创建一个图形窗口
-plt.ion()  # 开启交互模式
-fig, ax = plt.subplots()
-line, = ax.plot([])
-ax.set_ylim(0.0, 0.05)  # 设置y轴范围
+
 class QingXunBlueToothCollector:
     def __init__(self, client=None):
-        self.data_queue = deque(maxlen=300)
         self.latest_samples = []
         self.data = []
-        self.qrs_detector = PanTomkinsQRSDetectorOnline()
+        self.qrs_detector = PanTomkinsQRSDetectorOnline(signal_name="MLII")
 
     def handle_disconnect(self, client):  # 断开连接回调函数
         print(f"设备已断开连接")
@@ -690,10 +700,6 @@ class QingXunBlueToothCollector:
         return samples
 
     def handle_rx(self, sender, data): # 接收数据回调函数
-        global voltage_mV_max
-        global voltage_mV_min
-        global ax
-
         data_samples = self.packet_decode(data)
         data_samples = data_samples[3:-2]
 
