@@ -113,7 +113,7 @@ class QRSDetectorOnline(object):
             self.log_data(self.log_path, "timestamp,ecg_measurement,qrs_detected\n")
             print("Connected! Starting reading ECG measurements.")
         except serial.SerialException:
-            print("Cannot connect to provided port!")
+            print("Cannot connect.md to provided port!")
             return
 
         while True:
