@@ -98,9 +98,9 @@ def get_signal_params_online(signal_name):
         }
     elif signal_name == 'MLII':
         signal_params = {
-            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.1, 'filtered_weight': 0.9,
+            'low': 0.5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
-            'refractory_period': 0.40,
+            'refractory_period': 0.30,
             'threshold_factor': 1.3
         }
     elif signal_name == 'MLIII':
@@ -265,8 +265,8 @@ class PanTomkinsQRSDetectorOnline:
             return []
 
         # 设置滑动窗口参数
-        window_size = int(self.signal_len)  # 检测窗口即为信号窗口
-        overlap_size = int(self.signal_len / 2)    # 重叠窗口大小 (秒)
+        window_size = int(self.signal_len / 3)  # 检测窗口 - 信号窗口 / 3 - 1秒
+        overlap_size = int(self.signal_len / 6)    # 重叠窗口大小 - 信号窗口 / 6 - 0.5秒
 
         # 设置不应期 (避免同一QRS波被重复检测)
         refractory_period = int(self.params['refractory_period'] * self.fs)  # 不应期（秒）
@@ -364,14 +364,14 @@ class PanTomkinsQRSDetectorOnline:
         voltage_delta = voltage_mV_max - voltage_mV_min
 
         for sample in samples:
-            # 将新样本添加到deque中，自动淘汰旧数据
+
+            # 将新样本添加到deque中，自动淘汰旧数据，若在读取期间有所失常则用上一个数据源补充
+            if len(self.signal) > 500 and sample  < 2.0:
+                sample = self.signal[-1]
             self.signal.append(sample)
             # print(len(self.signal))
 
-
-
             if len(self.signal) > 500:
-
                 #当信号缓冲区更新时自动进行QRS检测
                 peaks = self.detect_qrs_peaks()
                 print(peaks)
@@ -386,16 +386,12 @@ class PanTomkinsQRSDetectorOnline:
                 if len(peaks) > 0:
                     # 在QRS波处画红圈
                     for v in peaks:
-                        v += 3
                         ax.plot(v, self.signal[v], 'ro', markersize=8)
 
-                # ax.set_ylim(10, 20)
                 ax.set_ylim(voltage_mV_min - 0.2 * voltage_delta, voltage_mV_max + 0.2 * voltage_delta)
                 ax.relim()
                 ax.autoscale_view()
                 plt.pause(0.01)  # 更新图形，可以根据需要调整刷新频率
-
-        for signal in self.signal:
 
 
 class QingXunBlueToothCollector:
