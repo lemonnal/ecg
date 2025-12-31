@@ -587,7 +587,7 @@ class QingXunBlueToothCollector:
 async def main():
     # 首先扫描并输出所有附近的蓝牙设备
     print("正在扫描所有附近的蓝牙设备...")
-    all_devices = await BleakScanner.discover(timeout=5.0)
+    all_devices = await BleakScanner.discover(timeout=1.0)
     print(f"\n找到 {len(all_devices)} 个蓝牙设备:\n")
 
     for d in all_devices:
