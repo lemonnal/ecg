@@ -1,19 +1,160 @@
-.idea
-.vscode
+# ==================
+# IDE 配置
+# ==================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
 
-# 输出的文件
+# ==================
+# Python 相关
+# ==================
+# 字节码文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv/
+
+# Python 分发 / 打包
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# 单元测试 / 覆盖率
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# ==================
+# 深度学习模型
+# ==================
+# 模型权重文件
+*.pth
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.pt
+*.ckpt
+*.safetensors
+
+# 训练输出
+runs/
+wandb/
+mlruns/
+logs/
+checkpoints/
+saved_models/
+*.npy
+*.npz
+
+# ==================
+# 数据文件
+# ==================
+# 原始数据和结果数据
+*.csv
+*.xlsx
+*.xls
+*.dat
+*.data
+*.txt
+
+# 注：保留以下重要的数据文件
+!qrs_detector/requirements.txt
+!README.md
+!connect.md
+!QRSDetector/
+
+# ==================
+# 输出和日志
+# ==================
 *.log
-*.exe
+logs/
+output/
+results/
+outputs/
+*.json
+
+# ==================
+# 文档和图片
+# ==================
 *.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
 *.pdf
 *.html
-*.h5
-*.pth
-*.json
-*.zip
-*.sh
-*.txt
-*.jpeg
-*.xml
+
+# 注：保留项目文档
+!README.md
+!*.md
+
+# ==================
+# 系统文件
+# ==================
+.DS_Store
+Thumbs.db
 *.iml
-*.csv
+
+# ==================
+# 临时文件
+# ==================
+*.tmp
+*.bak
+*.swp
+*~.nib
+*.zip
+*.tar.gz
+*.rar
+
+# ==================
+# Jupyter Notebook
+# ==================
+.ipynb_checkpoints/
+*.ipynb
+
+# ==================
+# 其他
+# ==================
+# 环境变量
+.env
+.env.local
+
+# 数据库
+*.db
+*.sqlite
+*.sqlite3
+
+*.sh
