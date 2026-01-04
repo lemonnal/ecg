@@ -67,90 +67,103 @@ def get_signal_params_online(signal_name):
             'integration_window_size': 0.100,
             'refractory_period': 0.20,
             'threshold_factor': 1.2,
+            'compensation_ms': 0.018,
         }
     elif signal_name == 'V2':
         signal_params = {
             'low': 3, 'high': 30.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
             'refractory_period': 0.20,
-            'threshold_factor': 1.3
+            'threshold_factor': 1.3,
+            'compensation_ms': 0.018,
         }
     elif signal_name == 'V3':
         signal_params = {
             'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
             'refractory_period': 0.20,
-            'threshold_factor': 1.4
+            'threshold_factor': 1.4,
+            'compensation_ms': 0.018,
         }
     elif signal_name == 'V4':
         signal_params = {
             'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
             'refractory_period': 0.20,
-            'threshold_factor': 1.4
+            'threshold_factor': 1.4,
+            'compensation_ms': 0.018,
         }
     elif signal_name == 'V5':
         signal_params = {
             'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
             'refractory_period': 0.20,
-            'threshold_factor': 1.4
+            'threshold_factor': 1.4,
+            'compensation_ms': 0.018,
         }
     elif signal_name == 'V6':
         signal_params = {
             'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
             'refractory_period': 0.20,
-            'threshold_factor': 1.4
+            'threshold_factor': 1.4,
+            'compensation_ms': 0.018,
         }
     elif signal_name == 'I':
         signal_params = {
             'low': 3, 'high': 40.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
             'refractory_period': 0.40,
-            'threshold_factor': 1.3
+            'threshold_factor': 1.3,
+            'compensation_ms': 0.018,
         }
     elif signal_name == 'MLII':
         signal_params = {
             'low': 3, 'high': 40.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
             'refractory_period': 0.40,
-            'threshold_factor': 1.3
+            'threshold_factor': 1.3,
+            'compensation_ms': 0.018,
         }
     elif signal_name == 'MLIII':
         signal_params = {
             'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
             'refractory_period': 0.20,
-            'threshold_factor': 1.4
+            'threshold_factor': 1.4,
+            'compensation_ms': 0.018,
         }
     elif signal_name == 'aVR':
         signal_params = {
             'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
             'refractory_period': 0.20,
-            'threshold_factor': 1.4
+            'threshold_factor': 1.4,
+            'compensation_ms': 0.018,
         }
     elif signal_name == 'aVL':
         signal_params = {
             'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
             'refractory_period': 0.20,
-            'threshold_factor': 1.4
+            'threshold_factor': 1.4,
+            'compensation_ms': 0.018,
         }
     elif signal_name == 'aVF':
         signal_params = {
             'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
             'refractory_period': 0.20,
-            'threshold_factor': 1.4
+            'threshold_factor': 1.4,
+            'compensation_ms': 0.018,
         }
     else:
         signal_params = {
             'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
             'refractory_period': 0.20,
-            'threshold_factor': 1.4
+            'threshold_factor': 1.4,
+            'compensation_ms': 0.018,
         }
 
     return signal_params
@@ -178,6 +191,7 @@ class PanTomkinsQRSDetectorOnline:
         self.integrated_signal = None
         self.qrs_peaks = []
         self.params = get_signal_params_online(signal_name=signal_name)
+        self.compensation_samples = int(self.params['compensation_ms'] * self.fs)  # 反向延迟补偿
 
     def bandpass_filter(self, signal_data):
         """
@@ -221,12 +235,12 @@ class PanTomkinsQRSDetectorOnline:
             differentiated_signal: 微分后的信号
         """
         differentiated_signal = np.zeros_like(signal_data)
-
-        # 使用5点中心差分公式提高精度
+        h = 1 / self.fs
+        # 使用5点中心差分公式
         # f'(x) ≈ (f(x-2h) - 8f(x-h) + 8f(x+h) - f(x+2h)) / (12h)
         for i in range(2, len(signal_data) - 2):
             differentiated_signal[i] = (-signal_data[i + 2] + 8 * signal_data[i + 1]
-                                        - 8 * signal_data[i - 1] + signal_data[i - 2]) / 12
+                                        - 8 * signal_data[i - 1] + signal_data[i - 2]) / ( 12 * h)
 
         return differentiated_signal
 
@@ -329,6 +343,43 @@ class PanTomkinsQRSDetectorOnline:
 
         return all_peaks
 
+    def apply_delay_compensation(self, peaks):
+        """
+        反向延迟补偿
+        由于带通滤波和移动窗口积分会引入相位延迟，
+        需要将检测到的峰值位置向前移动若干采样点以对齐真实R峰位置。
+
+        参数:
+            peaks: 检测到的QRS波峰值位置列表
+
+        返回:
+            compensated_peaks: 补偿后的峰值位置列表
+        """
+        if not peaks:
+            return []
+
+        compensated_peaks = []
+        for peak in peaks:
+            # 向前移动补偿采样点数
+            compensated_idx = peak + self.compensation_samples
+
+            # 确保补偿后的索引不越界
+            if compensated_idx >= 0:
+                # 在补偿位置附近搜索真实峰值（原始信号中的最大值）
+                # 搜索范围为补偿位置前后±5个采样点
+                search_start = max(0, compensated_idx - 5)
+                search_end = min(len(self.signal), compensated_idx + 6)
+
+                signal_array = np.array(list(self.signal))
+                local_peak_idx = search_start + np.argmax(signal_array[search_start:search_end])
+
+                compensated_peaks.append(local_peak_idx)
+            else:
+                # 如果补偿后越界，保持原位置或设为0
+                compensated_peaks.append(max(0, peak))
+
+        return compensated_peaks
+
     def detect_qrs_peaks(self):
         """
         检测QRS波峰值
@@ -357,6 +408,9 @@ class PanTomkinsQRSDetectorOnline:
 
         # 步骤5: QRS检测
         self.qrs_peaks = self.threshold_detection(self.integrated_signal)
+
+        # 步骤6: 反向延迟补偿
+        self.qrs_peaks = self.apply_delay_compensation(self.qrs_peaks)
 
         return self.qrs_peaks
 
