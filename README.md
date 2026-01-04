@@ -20,7 +20,6 @@
   - [其他算法](#其他算法)
 - [硬件与协议](#硬件与协议)
   - [支持的设备](#支持的设备)
-  - [轻迅蓝牙通信协议](#轻迅蓝牙通信协议)
   - [设备配置指南](#设备配置指南)
 - [辅助模块](#辅助模块)
   - [qrs_detector 参考实现](#qrs_detector-参考实现)
@@ -91,7 +90,7 @@ online.py
 │   ├── squaring()                 # 平方运算
 │   ├── moving_window_integration()# 移动窗口积分
 │   └── threshold_detection()      # 阈值检测
-└── QingXunBlueToothCollector      # 蓝牙数据采集器
+└── BlueToothCollector      # 蓝牙数据采集器
     ├── start_collection()         # 开启数据采集
     ├── handle_rx()                # 接收数据回调
     └── build_protocol_packet()    # 构建协议包
@@ -225,7 +224,6 @@ workspace-ecg/
 │   ├── YY 9706.247-2021医用电气设备标准.pdf
 │   └── 其他技术论文...
 │
-├── 轻迅蓝牙通信协议V1.0.1_ql.docx  # 蓝牙协议文档
 ├── OM6626_Application_Manual_V0.8.pdf  # 芯片应用手册
 ├── OM6626_reference_manual_V2.1.pdf    # 芯片参考手册
 │
@@ -240,7 +238,7 @@ workspace-ecg/
 
 #### 硬件要求
 
-- **蓝牙设备**：支持 BLE 的 ECG 采集设备（如轻迅科技的 AAA-TEST、PW-ECG-SL）
+- **蓝牙设备**：支持 BLE 的 ECG 采集设备
 - **操作系统**：Linux / macOS / Windows
 - **蓝牙适配器**：支持 BLE 4.0+
 
@@ -303,7 +301,7 @@ device_param = {
 
 #### 更换导联类型
 
-修改 `QingXunBlueToothCollector` 类的初始化参数：
+修改 `BlueToothCollector` 类的初始化参数：
 
 ```python
 self.qrs_detector = PanTomkinsQRSDetectorOnline(signal_name="MLII")  # 可改为 V1, V2, I 等
@@ -447,64 +445,6 @@ python BLE_data.py
 
 ---
 
-## 硬件与协议
-
-### 支持的设备
-
-#### 1. AAA-TEST（轻迅科技测试设备）
-
-```
-设备名称: AAA-TEST
-MAC 地址: EC:7A:26:9D:81:3F
-服务 UUID: 6e400001-b5a3-f393-e0a9-68716563686f
-```
-
-#### 2. PW-ECG-SL（轻迅科技 ECG 设备）
-
-```
-设备名称: PW-ECG-SL
-MAC 地址: E2:1B:A5:DB:DE:EA
-服务 UUID: 6e400001-b5a3-f393-e0a9-68716563686f
-```
-
----
-
-### 轻迅蓝牙通信协议
-
-#### 数据包格式
-
-```
-[功能码(2字节)] [数据长度(2字节)] [数据内容] [CRC16(2字节)]
-```
-
-#### 开启采集指令（功能码 0x0001）
-
-```
-[采集开关(1字节)] [时间戳(8字节)]
-```
-
-- 采集开关：0x01（开启），0x00（关闭）
-- 时间戳：8 字节（小端格式）
-
-#### ECG 数据包
-
-- 每包包含 119 个采样点
-- 每个采样点 2 字节（16 位整数，小端格式）
-- 电压转换系数：
-  - 单导联：0.288 μV/LSB
-  - 12 导联：0.318 μV/LSB
-
-#### CRC16 校验
-
-- 算法：CRC16-CCITT-FALSE
-- 多项式：0x1021
-- 初始值：0xFFFF
-- 结果异或值：0x0000
-
-详见：`轻迅蓝牙通信协议V1.0.1_ql.docx`
-
----
-
 ### 设备配置指南
 
 #### 添加新设备
@@ -517,9 +457,9 @@ if device == "YOUR_DEVICE_NAME":
     device_param = {
         "name": device,
         "address": "XX:XX:XX:XX:XX:XX",  # 替换为实际 MAC 地址
-        "service_uuid": QINGXUN_UART_SERVICE_UUID,
-        "rx_uuid": QINGXUN_UART_RX_CHAR_UUID,
-        "tx_uuid": QINGXUN_UART_TX_CHAR_UUID,
+        "service_uuid": ,
+        "rx_uuid": ,
+        "tx_uuid": ,
     }
 ```
 
@@ -735,13 +675,6 @@ python count_records.py
 - **TensorFlow / Keras**：深度学习框架
 - **PyTorch**：深度学习框架
 
-### 硬件平台
-
-- **轻迅科技 ECG 设备**：
-  - AAA-TEST（测试设备）
-  - PW-ECG-SL（生产设备）
-- **OM6626 芯片**：ECG 信号采集芯片
-
 ---
 
 ## 常见问题
@@ -876,7 +809,6 @@ if len(self.signal) > 500 and sample_index % 5 == 0:  # 每 5 个样本更新一
 
 ### 硬件文档
 
-- **轻迅蓝牙通信协议 V1.0.1**：[轻迅蓝牙通信协议V1.0.1_ql.docx](轻迅蓝牙通信协议V1.0.1_ql.docx)
 - **OM6626 应用手册**：[OM6626_Application_Manual_V0.8.pdf](OM6626_Application_Manual_V0.8.pdf)
 - **OM6626 参考手册**：[OM6626_reference_manual_V2.1.pdf](OM6626_reference_manual_V2.1.pdf)
 - **行业标准**：[YY 9706.247-2021医用电气设备标准.pdf](YY%209706.247-2021医用电气设备%20第2-47部分：动态心电图系统的基本安全和基本性能专用要求.pdf)
@@ -894,7 +826,7 @@ if len(self.signal) > 500 and sample_index % 5 == 0:  # 每 5 个样本更新一
 ### 已完成 ✅
 
 - [x] Pan-Tomkins 算法实现（在线/离线）
-- [x] 蓝牙数据采集（轻迅协议）
+- [x] 蓝牙数据采集（xx协议）
 - [x] 实时可视化（5 子图）
 - [x] 多导联参数优化
 - [x] MIT-BIH 数据库支持
@@ -919,57 +851,3 @@ if len(self.signal) > 500 and sample_index % 5 == 0:  # 每 5 个样本更新一
 - [ ] 数据导出与报告生成
 - [ ] 移动端适配
 
----
-
-## 贡献指南
-
-欢迎贡献代码、报告问题或提出改进建议！
-
-### 贡献方式
-
-1. Fork 本项目
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
-
-### 代码规范
-
-- 遵循 PEP 8 Python 编码规范
-- 添加必要的注释和文档字符串
-- 保持代码简洁清晰
-- 测试新功能
-
----
-
-## 许可证
-
-本项目遵循相关开源许可证。详见 [LICENSE](LICENSE) 文件。
-
----
-
-## 致谢
-
-- **MIT-BIH Arrhythmia Database**：提供标准测试数据
-- **轻迅科技**：提供硬件设备和技术支持
-- **Pan & Tompkins**：经典 QRS 检测算法
-- **Python 科学计算社区**：NumPy、SciPy、Matplotlib 等优秀工具
-- **PhysioNet**：生理信号数据库和研究资源
-
----
-
-## 联系方式
-
-如有问题或建议,请通过以下方式联系：
-
-- 提交 Issue
-- 发送 Pull Request
-- 查看项目文档
-
----
-
-**最后更新**: 2025-12-31
-
-**项目状态**: 🚀 活跃开发中
-
-**版本**: v2.0 (整合版本)
