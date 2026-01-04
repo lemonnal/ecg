@@ -15,18 +15,19 @@ QINGXUN_UART_RX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-68716563686f"
 QINGXUN_UART_TX_CHAR_UUID = "6e400003-b5a3-f393-e0a9-68716563686f"
 
 
-device = "AAA-TEST"
-if device == "AAA-TEST":
+# 设备配置 - 当前选择的设备
+DEVICE_NAME = "AAA-TEST"
+if DEVICE_NAME == "AAA-TEST":
     device_param = {
-        "name": device,
+        "name": DEVICE_NAME,
         "address": "EC:7A:26:9D:81:3F",
         "service_uuid": QINGXUN_UART_SERVICE_UUID,
         "rx_uuid": QINGXUN_UART_RX_CHAR_UUID,
         "tx_uuid": QINGXUN_UART_TX_CHAR_UUID,
     }
-elif device == "PW-ECG-SL":
+elif DEVICE_NAME == "PW-ECG-SL":
     device_param = {
-        "name": device,
+        "name": DEVICE_NAME,
         "address": "E2:1B:A5:DB:DE:EA",
         "service_uuid": QINGXUN_UART_SERVICE_UUID,
         "rx_uuid": QINGXUN_UART_RX_CHAR_UUID,
@@ -34,8 +35,9 @@ elif device == "PW-ECG-SL":
     }
 
 
-voltage_mV_max = -0xffffff
-voltage_mV_min = 0xffffff
+# 全局变量: ECG信号电压范围 (用于绘图y轴范围)
+ECG_VOLTAGE_MAX = -0xffffff
+ECG_VOLTAGE_MIN = 0xffffff
 
 
 # # 创建一个图形窗口
@@ -60,6 +62,25 @@ ax5.set_ylabel('integrated signal')
 
 
 def get_signal_params_online(signal_name):
+    """
+    根据ECG导联名称获取对应的信号处理参数
+    不同导联具有不同的频率特性和形态特征，需要使用不同的参数
+
+    参数:
+        signal_name: ECG导联名称 (如 "MLII", "V1", "V2", "I", "aVR" 等)
+
+    返回:
+        signal_params: 包含以下参数的字典:
+            - low: 带通滤波器低频截止频率 (Hz)
+            - high: 带通滤波器高频截止频率 (Hz)
+            - filter_order: 滤波器阶数
+            - original_weight: 原始信号权重
+            - filtered_weight: 滤波后信号权重
+            - integration_window_size: 积分窗口大小 (秒)
+            - refractory_period: QRS检测不应期 (秒)
+            - threshold_factor: 阈值系数
+            - compensation_ms: 相位延迟补偿时间 (毫秒)
+    """
     # 基于导联特性的参数
     if signal_name == 'V1':
         signal_params = {
@@ -111,7 +132,7 @@ def get_signal_params_online(signal_name):
         }
     elif signal_name == 'I':
         signal_params = {
-            'low': 3, 'high': 40.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'low': 0.5, 'high': 40.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
             'refractory_period': 0.40,
             'threshold_factor': 1.3,
@@ -119,10 +140,10 @@ def get_signal_params_online(signal_name):
         }
     elif signal_name == 'MLII':
         signal_params = {
-            'low': 4, 'high': 20.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
-            'refractory_period': 0.60,
-            'threshold_factor': 1.6,
+            'refractory_period': 0.50,
+            'threshold_factor': 1.4,
             'compensation_ms': 0.018,
         }
     elif signal_name == 'MLIII':
@@ -169,51 +190,88 @@ def get_signal_params_online(signal_name):
     return signal_params
 
 
-class PanTomkinsQRSDetectorOnline:
+class RealTimeECGDetector:
     """
-    基于Pan-Tomkins算法的实时QRS波检测器
+    基于Pan-Tomkins算法的实时ECG波形检测器
+
+    实现完整的ECG波形检测，包括:
+    - R峰检测 (QRS复合波的峰值)
+    - Q波检测 (R峰前的负向波)
+    - S波检测 (R峰后的负向波)
+    - P波检测 (QRS波之前的正向小波，代表心房去极化)
+    - T波检测 (QRS波之后的正向宽波，代表心室复极化)
+
+    算法流程:
+    1. 带通滤波 - 去除基线漂移和高频噪声
+    2. 微分 - 突出QRS波的陡峭斜率
+    3. 平方 - 使所有值为正并放大高斜率区域
+    4. 移动窗口积分 - 平滑信号并提取QRS波特征
+    5. 自适应阈值检测 - 使用滑动窗口和EMA平滑检测R峰
+    6. 相位延迟补偿 - 补偿滤波和积分引入的延迟
     """
 
     def __init__(self, signal_name="MLII"):
         """
-        初始化QRS检测器
+        初始化ECG波形检测器
 
         参数:
-            fs: 采样频率 (Hz)
-            signal_name: ECG导联名称 (如 "MLII", "V1", "V2" 等)
+            signal_name: ECG导联名称 (如 "MLII", "V1", "V2", "I", "aVR" 等)
         """
-        self.fs = 250
-        self.signal_len = 750
-        self.signal = deque([], self.signal_len)
-        self.filtered_signal = None
-        self.differentiated_signal = None
-        self.squared_signal = None
-        self.integrated_signal = None
-        self.qrs_peaks = []
-        self.q_waves = []  # Q波位置
-        self.s_waves = []  # S波位置
-        self.params = get_signal_params_online(signal_name=signal_name)
-        self.compensation_samples = int(self.params['compensation_ms'] * self.fs)  # 反向延迟补偿
+        # 采样参数
+        self.fs = 250  # 采样频率 (Hz)
+        self.signal_len = 750  # 信号缓冲区长度 (采样点数)
 
-        # 阈值平滑参数（指数移动平均）
+        # 信号缓冲区 (使用deque实现滑动窗口)
+        self.signal = deque([], self.signal_len)
+        self.filtered_signal = None      # 带通滤波后的信号
+        self.differentiated_signal = None # 微分后的信号
+        self.squared_signal = None       # 平方后的信号
+        self.integrated_signal = None    # 移动窗口积分后的信号
+
+        # 检测结果存储
+        self.qrs_peaks = []  # R峰位置列表
+        self.q_waves = []    # Q波位置列表
+        self.s_waves = []    # S波位置列表
+        self.p_waves = []    # P波位置列表
+        self.t_waves = []    # T波位置列表
+
+        # 获取导联相关的处理参数
+        self.params = get_signal_params_online(signal_name=signal_name)
+        self.phase_delay_compensation_samples = int(self.params['compensation_ms'] * self.fs)
+
+        # 阈值平滑参数（指数移动平均 EMA）
         self.ema_threshold = None
         self.ema_alpha = 0.1  # 平滑系数，越小变化越慢
 
-        # Q波和S波检测参数
-        self.q_wave_search_before = int(0.080 * self.fs)  # Q波搜索窗口: R峰前80ms
-        self.q_wave_search_after = int(0.010 * self.fs)   # Q波搜索窗口: R峰前20ms
-        self.s_wave_search_start = int(0.010 * self.fs)   # S波搜索窗口: R峰后20ms
-        self.s_wave_search_end = int(0.100 * self.fs)     # S波搜索窗口: R峰后100ms
-        self.q_wave_min_amp = 0.01  # Q波最小幅值 (mV)
-        self.s_wave_min_amp = 0.01  # S波最小幅值 (mV)
+        # Q波检测参数 (R峰前的负向波)
+        self.q_wave_search_start = int(0.080 * self.fs)  # 搜索窗口起点: R峰前80ms
+        self.q_wave_search_end = int(0.010 * self.fs)    # 搜索窗口终点: R峰前10ms
+        self.q_wave_min_amplitude = 0.01  # Q波最小幅值 (mV)
+
+        # S波检测参数 (R峰后的负向波)
+        self.s_wave_search_start = int(0.010 * self.fs)  # 搜索窗口起点: R峰后10ms
+        self.s_wave_search_end = int(0.100 * self.fs)    # 搜索窗口终点: R峰后100ms
+        self.s_wave_min_amplitude = 0.01  # S波最小幅值 (mV)
+
+        # P波检测参数 (QRS波之前的正向小波，心房去极化)
+        self.p_wave_search_start = int(0.200 * self.fs)  # 搜索窗口起点: R峰前200ms
+        self.p_wave_search_end = int(0.040 * self.fs)    # 搜索窗口终点: R峰前40ms
+        self.p_wave_min_amplitude = 0.02  # P波最小幅值 (mV)
+        self.p_wave_max_width = int(0.120 * self.fs)  # P波最大宽度 (采样点数)
+
+        # T波检测参数 (QRS波之后的正向宽波，心室复极化)
+        self.t_wave_search_start = int(0.150 * self.fs)  # 搜索窗口起点: R峰后150ms
+        self.t_wave_search_end = int(0.400 * self.fs)    # 搜索窗口终点: R峰后400ms
+        self.t_wave_min_amplitude = 0.05  # T波最小幅值 (mV)
+        self.t_wave_max_width = int(0.200 * self.fs)  # T波最大宽度 (采样点数)
 
     def bandpass_filter(self, signal_data):
         """
         自适应带通滤波器
-        根据不同导联使用不同的频率参数
+        根据不同导联使用不同的频率参数，去除基线漂移和高频噪声
 
         参数:
-            signal_data: 输入ECG信号
+            signal_data: 输入ECG信号数组
 
         返回:
             combined_signal: 滤波后与原始信号加权组合的信号
@@ -341,8 +399,8 @@ class PanTomkinsQRSDetectorOnline:
                                       (1 - self.ema_alpha) * self.ema_threshold)
 
             current_threshold = self.ema_threshold
-            print('window_mean: {}, window_std: {}'.format(window_mean, window_std))
-            print('raw_threshold: {}, ema_threshold: {}'.format(raw_threshold, self.ema_threshold))
+            # print('window_mean: {}, window_std: {}'.format(window_mean, window_std))
+            # print('raw_threshold: {}, ema_threshold: {}'.format(raw_threshold, self.ema_threshold))
 
             # 在窗口内检测候选峰值
             window_peaks = []
@@ -370,7 +428,7 @@ class PanTomkinsQRSDetectorOnline:
 
     def apply_delay_compensation(self, peaks):
         """
-        反向延迟补偿
+        相位延迟补偿
         由于带通滤波和移动窗口积分会引入相位延迟，
         需要将检测到的峰值位置向前移动若干采样点以对齐真实R峰位置。
 
@@ -386,7 +444,7 @@ class PanTomkinsQRSDetectorOnline:
         compensated_peaks = []
         for peak in peaks:
             # 向前移动补偿采样点数
-            compensated_idx = peak + self.compensation_samples
+            compensated_idx = peak + self.phase_delay_compensation_samples
 
             # 确保补偿后的索引不越界
             if compensated_idx >= 0:
@@ -405,10 +463,10 @@ class PanTomkinsQRSDetectorOnline:
 
         return compensated_peaks
 
-    def detect_q_s_waves(self, r_peaks, signal_array):
+    def detect_q_waves(self, r_peaks, signal_array):
         """
-        检测Q波和S波
-        结合窗口搜索和微分信号的方法
+        检测Q波
+        Q波在QRS波之前，R峰前的负向波
 
         参数:
             r_peaks: R峰位置列表
@@ -416,26 +474,90 @@ class PanTomkinsQRSDetectorOnline:
 
         返回:
             q_waves: Q波位置列表
-            s_waves: S波位置列表
         """
         q_waves = []
-        s_waves = []
 
         if not r_peaks or len(signal_array) == 0:
-            return q_waves, s_waves
+            return q_waves
 
         for r_peak in r_peaks:
-            # 检测Q波 (R峰前的负向波)
             q_wave = self._detect_q_wave(r_peak, signal_array)
             if q_wave is not None:
                 q_waves.append(q_wave)
 
-            # 检测S波 (R峰后的负向波)
+        return q_waves
+
+    def detect_s_waves(self, r_peaks, signal_array):
+        """
+        检测S波
+        S波在QRS波之后，R峰后的负向波
+
+        参数:
+            r_peaks: R峰位置列表
+            signal_array: 原始ECG信号数组
+
+        返回:
+            s_waves: S波位置列表
+        """
+        s_waves = []
+
+        if not r_peaks or len(signal_array) == 0:
+            return s_waves
+
+        for r_peak in r_peaks:
             s_wave = self._detect_s_wave(r_peak, signal_array)
             if s_wave is not None:
                 s_waves.append(s_wave)
 
-        return q_waves, s_waves
+        return s_waves
+
+    def detect_p_waves(self, r_peaks, signal_array):
+        """
+        检测P波
+        P波在QRS波之前，代表心房去极化
+
+        参数:
+            r_peaks: R峰位置列表
+            signal_array: 原始ECG信号数组
+
+        返回:
+            p_waves: P波位置列表
+        """
+        p_waves = []
+
+        if not r_peaks or len(signal_array) == 0:
+            return p_waves
+
+        for r_peak in r_peaks:
+            p_wave = self._detect_p_wave(r_peak, signal_array)
+            if p_wave is not None:
+                p_waves.append(p_wave)
+
+        return p_waves
+
+    def detect_t_waves(self, r_peaks, signal_array):
+        """
+        检测T波
+        T波在QRS波之后，代表心室复极化
+
+        参数:
+            r_peaks: R峰位置列表
+            signal_array: 原始ECG信号数组
+
+        返回:
+            t_waves: T波位置列表
+        """
+        t_waves = []
+
+        if not r_peaks or len(signal_array) == 0:
+            return t_waves
+
+        for r_peak in r_peaks:
+            t_wave = self._detect_t_wave(r_peak, signal_array)
+            if t_wave is not None:
+                t_waves.append(t_wave)
+
+        return t_waves
 
     def _detect_q_wave(self, r_peak, signal_array):
         """
@@ -449,14 +571,15 @@ class PanTomkinsQRSDetectorOnline:
             q_wave_pos: Q波位置，如果未检测到则返回None
         """
         # 定义Q波搜索窗口 (R峰前)
-        search_start = max(0, r_peak - self.q_wave_search_before)
-        search_end = max(0, r_peak - self.q_wave_search_after)
+        search_start = max(0, r_peak - self.q_wave_search_start)
+        search_end = max(0, r_peak - self.q_wave_search_end)
 
         if search_end <= search_start:
             return None
 
         # 在搜索窗口内找最小值点（Q波是负向波）
         window = signal_array[search_start:search_end]
+        print('Q wave search window signal:', window)
         if len(window) == 0:
             return None
 
@@ -472,7 +595,7 @@ class PanTomkinsQRSDetectorOnline:
         # 2. 幅值差应超过最小阈值
         amplitude_diff = r_amplitude - q_amplitude
 
-        if (amplitude_diff > self.q_wave_min_amp and
+        if (amplitude_diff > self.q_wave_min_amplitude and
             q_amplitude < r_amplitude * 0.7):  # Q波应明显低于R峰
             return q_peak_candidate
 
@@ -513,21 +636,124 @@ class PanTomkinsQRSDetectorOnline:
         # 2. 幅值差应超过最小阈值
         amplitude_diff = r_amplitude - s_amplitude
 
-        if (amplitude_diff > self.s_wave_min_amp and
+        if (amplitude_diff > self.s_wave_min_amplitude and
             s_amplitude < r_amplitude * 0.7):  # S波应明显低于R峰
             return s_peak_candidate
 
         return None
 
-    def detect_qrs_peaks(self):
+    def _detect_p_wave(self, r_peak, signal_array):
         """
-        检测QRS波峰值
+        检测单个R峰对应的P波
+        P波在QRS波之前，代表心房去极化
 
         参数:
-            signal_data: 输入ECG信号
+            r_peak: R峰位置
+            signal_array: 原始ECG信号数组
 
         返回:
-            qrs_peaks: QRS波峰值位置索引
+            p_wave_pos: P波位置，如果未检测到则返回None
+        """
+        # 定义P波搜索窗口 (R峰前)
+        search_start = max(0, r_peak - self.p_wave_search_start)
+        search_end = max(0, r_peak - self.p_wave_search_end)
+
+        if search_end <= search_start:
+            return None
+
+        # 在搜索窗口内找最大值点（P波通常是正向小波）
+        window = signal_array[search_start:search_end]
+        if len(window) == 0:
+            return None
+
+        max_idx = np.argmax(window)
+        p_peak_candidate = search_start + max_idx
+
+        # 获取P波和R峰幅值
+        r_amplitude = signal_array[r_peak]
+        p_amplitude = signal_array[p_peak_candidate]
+
+        # 计算基线（窗口两端平均值）
+        baseline_start = signal_array[search_start]
+        baseline_end = signal_array[search_end - 1] if search_end < len(signal_array) else baseline_start
+        baseline = (baseline_start + baseline_end) / 2
+
+        # P波幅值（相对于基线）
+        p_amplitude_from_baseline = p_amplitude - baseline
+
+        # 验证P波特征:
+        # 1. P波幅值应超过最小阈值
+        # 2. P波应明显小于R峰
+        if self.p_wave_min_amplitude < p_amplitude_from_baseline < r_amplitude * 0.25:  # P波应远小于R峰
+            return p_peak_candidate
+
+        return None
+
+    def _detect_t_wave(self, r_peak, signal_array):
+        """
+        检测单个R峰对应的T波
+        T波在QRS波之后，代表心室复极化
+
+        参数:
+            r_peak: R峰位置
+            signal_array: 原始ECG信号数组
+
+        返回:
+            t_wave_pos: T波位置，如果未检测到则返回None
+        """
+        # 定义T波搜索窗口 (R峰后)
+        search_start = min(len(signal_array) - 1, r_peak + self.t_wave_search_start)
+        search_end = min(len(signal_array), r_peak + self.t_wave_search_end)
+
+        if search_end <= search_start:
+            return None
+
+        # 在搜索窗口内找最大值点（T波通常是正向宽波）
+        window = signal_array[search_start:search_end]
+        if len(window) == 0:
+            return None
+
+        max_idx = np.argmax(window)
+        t_peak_candidate = search_start + max_idx
+
+        # 获取T波和R峰幅值
+        r_amplitude = signal_array[r_peak]
+        t_amplitude = signal_array[t_peak_candidate]
+
+        # 计算基线（窗口两端平均值）
+        baseline_start = signal_array[search_start]
+        baseline_end = signal_array[search_end - 1] if search_end < len(signal_array) else baseline_start
+        baseline = (baseline_start + baseline_end) / 2
+
+        # T波幅值（相对于基线）
+        t_amplitude_from_baseline = t_amplitude - baseline
+
+        # 验证T波特征:
+        # 1. T波幅值应超过最小阈值
+        # 2. T波通常小于R峰但大于P波
+        if self.t_wave_min_amplitude < t_amplitude_from_baseline < r_amplitude * 0.6:  # T波应小于R峰
+            return t_peak_candidate
+
+        return None
+
+    def detect_wave(self):
+        """
+        执行完整的ECG波形检测流程
+
+        按Pan-Tomkins算法依次执行:
+        1. 带通滤波 - 去除基线漂移和高频噪声
+        2. 微分 - 突出QRS波的陡峭斜率
+        3. 平方 - 使所有值为正并放大高斜率区域
+        4. 移动窗口积分 - 平滑信号并提取QRS波特征
+        5. R峰检测 - 使用自适应阈值检测
+        6. 相位延迟补偿 - 补偿滤波引入的延迟
+        7. Q波检测 - R峰前的负向波
+        8. S波检测 - R峰后的负向波
+        9. P波检测 - 心房去极化波
+        10. T波检测 - 心室复极化波
+
+        返回:
+            r_peaks: R峰位置索引列表
         """
 
         # 将deque转换为numpy数组，以便进行数值运算
@@ -545,33 +771,42 @@ class PanTomkinsQRSDetectorOnline:
         # 步骤4: 移动窗口积分
         self.integrated_signal = self.moving_window_integration(self.squared_signal)
 
-        # 步骤5: QRS检测
+        # 步骤5: R峰检测
         self.qrs_peaks = self.threshold_detection(self.integrated_signal)
 
-        # 步骤6: 反向延迟补偿
+        # 步骤6: 相位延迟补偿
         self.qrs_peaks = self.apply_delay_compensation(self.qrs_peaks)
 
-        # 步骤7: 检测Q波和S波
-        self.q_waves, self.s_waves = self.detect_q_s_waves(self.qrs_peaks, signal_array)
+        # 步骤7-10: 检测PQRST波
+        # 使用原始信号检测
+        # self.q_waves = self.detect_q_waves(self.qrs_peaks, signal_array)
+        # self.s_waves = self.detect_s_waves(self.qrs_peaks, signal_array)
+        # self.p_waves = self.detect_p_waves(self.qrs_peaks, signal_array)
+        # self.t_waves = self.detect_t_waves(self.qrs_peaks, signal_array)
+
+        # 使用滤波后信号检测
+        self.q_waves = self.detect_q_waves(self.qrs_peaks, self.filtered_signal)
+        self.s_waves = self.detect_s_waves(self.qrs_peaks, self.filtered_signal)
+        self.p_waves = self.detect_p_waves(self.qrs_peaks, self.filtered_signal)
+        self.t_waves = self.detect_t_waves(self.qrs_peaks, self.filtered_signal)
 
         return self.qrs_peaks
 
     def update_signal_and_plot(self, samples):
-        global voltage_mV_max
-        global voltage_mV_min
         """
-        更新信号缓冲区
-        接收蓝牙回调的新数据并添加到信号队列中
+        更新信号缓冲区并刷新显示
+        接收蓝牙回调的新数据并添加到信号队列中，进行波形检测和可视化
 
         参数:
             samples: 新接收的采样数据列表 (单位: mV)
         """
+        global ECG_VOLTAGE_MAX
+        global ECG_VOLTAGE_MIN
 
         print(self.params)
-        voltage_mV_max = max(samples) if voltage_mV_max < max(samples) else voltage_mV_max
-        voltage_mV_min = min(samples) if voltage_mV_min > min(samples) else voltage_mV_min
-        # print(voltage_mV_max, voltage_mV_min)
-        voltage_delta = voltage_mV_max - voltage_mV_min
+        ECG_VOLTAGE_MAX = max(samples) if ECG_VOLTAGE_MAX < max(samples) else ECG_VOLTAGE_MAX
+        ECG_VOLTAGE_MIN = min(samples) if ECG_VOLTAGE_MIN > min(samples) else ECG_VOLTAGE_MIN
+        voltage_delta = ECG_VOLTAGE_MAX - ECG_VOLTAGE_MIN
 
         for sample in samples:
 
@@ -583,7 +818,7 @@ class PanTomkinsQRSDetectorOnline:
 
             # if len(self.signal) > 500:
             #     #当信号缓冲区更新时自动进行QRS检测
-            #     peaks = self.detect_qrs_peaks()
+            #     peaks = self.detect_wave()
             #     print(peaks)
             #
             #     line.set_ydata(self.signal)
@@ -605,10 +840,12 @@ class PanTomkinsQRSDetectorOnline:
 
 
             if len(self.signal) > 500:
-                peaks = self.detect_qrs_peaks()
+                peaks = self.detect_wave()
                 print(f"R peaks: {peaks}")
                 print(f"Q waves: {self.q_waves}")
                 print(f"S waves: {self.s_waves}")
+                print(f"P waves: {self.p_waves}")
+                print(f"T waves: {self.t_waves}")
 
                 # 更新原始信号子图
                 line1.set_ydata(self.signal)
@@ -683,6 +920,32 @@ class PanTomkinsQRSDetectorOnline:
                         if self.integrated_signal is not None:
                             ax5.plot(v, self.integrated_signal[v], 'gv', markersize=8)
 
+                # 绘制P波 (品红色方块)
+                if len(self.p_waves) > 0:
+                    for v in self.p_waves:
+                        ax1.plot(v, self.signal[v], 'ms', markersize=8, label='P' if v == self.p_waves[0] else "")
+                        if self.filtered_signal is not None:
+                            ax2.plot(v, self.filtered_signal[v], 'ms', markersize=8)
+                        if self.differentiated_signal is not None:
+                            ax3.plot(v, self.differentiated_signal[v], 'ms', markersize=8)
+                        if self.squared_signal is not None:
+                            ax4.plot(v, self.squared_signal[v], 'ms', markersize=8)
+                        if self.integrated_signal is not None:
+                            ax5.plot(v, self.integrated_signal[v], 'ms', markersize=8)
+
+                # 绘制T波 (青色菱形)
+                if len(self.t_waves) > 0:
+                    for v in self.t_waves:
+                        ax1.plot(v, self.signal[v], 'cD', markersize=8, label='T' if v == self.t_waves[0] else "")
+                        if self.filtered_signal is not None:
+                            ax2.plot(v, self.filtered_signal[v], 'cD', markersize=8)
+                        if self.differentiated_signal is not None:
+                            ax3.plot(v, self.differentiated_signal[v], 'cD', markersize=8)
+                        if self.squared_signal is not None:
+                            ax4.plot(v, self.squared_signal[v], 'cD', markersize=8)
+                        if self.integrated_signal is not None:
+                            ax5.plot(v, self.integrated_signal[v], 'cD', markersize=8)
+
                 # 更新所有子图视图
                 for axis in [ax1, ax2, ax3, ax4, ax5]:
                     axis.relim()
@@ -695,7 +958,7 @@ class QingXunBlueToothCollector:
     def __init__(self, client=None):
         self.latest_samples = []
         self.data = []
-        self.qrs_detector = PanTomkinsQRSDetectorOnline(signal_name="MLII")
+        self.qrs_detector = RealTimeECGDetector(signal_name="MLII")
 
     def handle_disconnect(self, client):  # 断开连接回调函数
         print(f"设备已断开连接")
