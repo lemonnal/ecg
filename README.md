@@ -288,14 +288,14 @@ python online.py
 在 [online.py](QRSDetector/online.py) 中修改设备参数:
 
 ```python
-device = "AAA-TEST"  # 或 "PW-ECG-SL"
+device = "YOUR_DEVICE_NAME"
 
 device_param = {
     "name": device,
-    "address": "EC:7A:26:9D:81:3F",  # MAC 地址
-    "service_uuid": "6e400001-b5a3-f393-e0a9-68716563686f",
-    "rx_uuid": "6e400002-b5a3-f393-e0a9-68716563686f",
-    "tx_uuid": "6e400003-b5a3-f393-e0a9-68716563686f",
+    "address": "XX:XX:XX:XX:XX:XX",  # 替换为实际 MAC 地址
+    "service_uuid": "YOUR_SERVICE_UUID",
+    "rx_uuid": "YOUR_RX_UUID",
+    "tx_uuid": "YOUR_TX_UUID",
 }
 ```
 
@@ -327,7 +327,7 @@ python offline.py
 在 [offline.py](QRSDetector/offline.py) 中修改：
 
 ```python
-root = "/path/to/mit-bih-arrhythmia-database-1.0.0/"
+root = "YOUR_DATABASE_PATH"  # 替换为 MIT-BIH 数据库实际路径
 ```
 
 #### 选择检测记录
