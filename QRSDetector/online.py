@@ -119,10 +119,10 @@ def get_signal_params_online(signal_name):
         }
     elif signal_name == 'MLII':
         signal_params = {
-            'low': 3, 'high': 40.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
+            'low': 4, 'high': 20.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
             'integration_window_size': 0.100,
-            'refractory_period': 0.40,
-            'threshold_factor': 1.3,
+            'refractory_period': 0.60,
+            'threshold_factor': 1.6,
             'compensation_ms': 0.018,
         }
     elif signal_name == 'MLIII':
@@ -190,8 +190,22 @@ class PanTomkinsQRSDetectorOnline:
         self.squared_signal = None
         self.integrated_signal = None
         self.qrs_peaks = []
+        self.q_waves = []  # Q波位置
+        self.s_waves = []  # S波位置
         self.params = get_signal_params_online(signal_name=signal_name)
         self.compensation_samples = int(self.params['compensation_ms'] * self.fs)  # 反向延迟补偿
+
+        # 阈值平滑参数（指数移动平均）
+        self.ema_threshold = None
+        self.ema_alpha = 0.1  # 平滑系数，越小变化越慢
+
+        # Q波和S波检测参数
+        self.q_wave_search_before = int(0.080 * self.fs)  # Q波搜索窗口: R峰前80ms
+        self.q_wave_search_after = int(0.010 * self.fs)   # Q波搜索窗口: R峰前20ms
+        self.s_wave_search_start = int(0.010 * self.fs)   # S波搜索窗口: R峰后20ms
+        self.s_wave_search_end = int(0.100 * self.fs)     # S波搜索窗口: R峰后100ms
+        self.q_wave_min_amp = 0.01  # Q波最小幅值 (mV)
+        self.s_wave_min_amp = 0.01  # S波最小幅值 (mV)
 
     def bandpass_filter(self, signal_data):
         """
@@ -240,7 +254,7 @@ class PanTomkinsQRSDetectorOnline:
         # f'(x) ≈ (f(x-2h) - 8f(x-h) + 8f(x+h) - f(x+2h)) / (12h)
         for i in range(2, len(signal_data) - 2):
             differentiated_signal[i] = (-signal_data[i + 2] + 8 * signal_data[i + 1]
-                                        - 8 * signal_data[i - 1] + signal_data[i - 2]) / ( 12 * h)
+                                        - 8 * signal_data[i - 1] + signal_data[i - 2]) / (12 * h)
 
         return differentiated_signal
 
@@ -293,8 +307,8 @@ class PanTomkinsQRSDetectorOnline:
             return []
 
         # 设置滑动窗口参数
-        window_size = int(self.signal_len / 3)  # 检测窗口 - 信号窗口 / 3 - 1秒
-        overlap_size = int(self.signal_len / 6)    # 重叠窗口大小 - 信号窗口 / 6 - 0.5秒
+        window_size = int(self.signal_len * (1 / 3))  # 检测窗口 - 信号窗口 - 1秒
+        overlap_size = int(self.signal_len * (1 / 6))    # 重叠窗口大小 - 信号窗口 - 0.5秒
 
         # 设置不应期 (避免同一QRS波被重复检测)
         refractory_period = int(self.params['refractory_period'] * self.fs)  # 不应期（秒）
@@ -317,7 +331,18 @@ class PanTomkinsQRSDetectorOnline:
             # 计算当前窗口的自适应阈值
             window_mean = np.mean(window_signal)
             window_std = np.std(window_signal)
-            current_threshold = window_mean + threshold_factor * window_std
+            raw_threshold = window_mean + threshold_factor * window_std
+
+            # 使用指数移动平均平滑阈值，避免突变
+            if self.ema_threshold is None:
+                self.ema_threshold = raw_threshold
+            else:
+                self.ema_threshold = (self.ema_alpha * raw_threshold +
+                                      (1 - self.ema_alpha) * self.ema_threshold)
+
+            current_threshold = self.ema_threshold
+            print('window_mean: {}, window_std: {}'.format(window_mean, window_std))
+            print('raw_threshold: {}, ema_threshold: {}'.format(raw_threshold, self.ema_threshold))
 
             # 在窗口内检测候选峰值
             window_peaks = []
@@ -380,6 +405,120 @@ class PanTomkinsQRSDetectorOnline:
 
         return compensated_peaks
 
+    def detect_q_s_waves(self, r_peaks, signal_array):
+        """
+        检测Q波和S波
+        结合窗口搜索和微分信号的方法
+
+        参数:
+            r_peaks: R峰位置列表
+            signal_array: 原始ECG信号数组
+
+        返回:
+            q_waves: Q波位置列表
+            s_waves: S波位置列表
+        """
+        q_waves = []
+        s_waves = []
+
+        if not r_peaks or len(signal_array) == 0:
+            return q_waves, s_waves
+
+        for r_peak in r_peaks:
+            # 检测Q波 (R峰前的负向波)
+            q_wave = self._detect_q_wave(r_peak, signal_array)
+            if q_wave is not None:
+                q_waves.append(q_wave)
+
+            # 检测S波 (R峰后的负向波)
+            s_wave = self._detect_s_wave(r_peak, signal_array)
+            if s_wave is not None:
+                s_waves.append(s_wave)
+
+        return q_waves, s_waves
+
+    def _detect_q_wave(self, r_peak, signal_array):
+        """
+        检测单个R峰对应的Q波
+
+        参数:
+            r_peak: R峰位置
+            signal_array: 原始ECG信号数组
+
+        返回:
+            q_wave_pos: Q波位置，如果未检测到则返回None
+        """
+        # 定义Q波搜索窗口 (R峰前)
+        search_start = max(0, r_peak - self.q_wave_search_before)
+        search_end = max(0, r_peak - self.q_wave_search_after)
+
+        if search_end <= search_start:
+            return None
+
+        # 在搜索窗口内找最小值点（Q波是负向波）
+        window = signal_array[search_start:search_end]
+        if len(window) == 0:
+            return None
+
+        min_idx = np.argmin(window)
+        q_peak_candidate = search_start + min_idx
+
+        # 获取R峰幅值作为参考
+        r_amplitude = signal_array[r_peak]
+        q_amplitude = signal_array[q_peak_candidate]
+
+        # 验证Q波特征:
+        # 1. Q波幅值应明显小于R峰（负向偏转）
+        # 2. 幅值差应超过最小阈值
+        amplitude_diff = r_amplitude - q_amplitude
+
+        if (amplitude_diff > self.q_wave_min_amp and
+            q_amplitude < r_amplitude * 0.7):  # Q波应明显低于R峰
+            return q_peak_candidate
+
+        return None
+
+    def _detect_s_wave(self, r_peak, signal_array):
+        """
+        检测单个R峰对应的S波
+
+        参数:
+            r_peak: R峰位置
+            signal_array: 原始ECG信号数组
+
+        返回:
+            s_wave_pos: S波位置，如果未检测到则返回None
+        """
+        # 定义S波搜索窗口 (R峰后)
+        search_start = min(len(signal_array) - 1, r_peak + self.s_wave_search_start)
+        search_end = min(len(signal_array), r_peak + self.s_wave_search_end)
+
+        if search_end <= search_start:
+            return None
+
+        # 在搜索窗口内找最小值点（S波是负向波）
+        window = signal_array[search_start:search_end]
+        if len(window) == 0:
+            return None
+
+        min_idx = np.argmin(window)
+        s_peak_candidate = search_start + min_idx
+
+        # 获取R峰幅值作为参考
+        r_amplitude = signal_array[r_peak]
+        s_amplitude = signal_array[s_peak_candidate]
+
+        # 验证S波特征:
+        # 1. S波幅值应明显小于R峰（负向偏转）
+        # 2. 幅值差应超过最小阈值
+        amplitude_diff = r_amplitude - s_amplitude
+
+        if (amplitude_diff > self.s_wave_min_amp and
+            s_amplitude < r_amplitude * 0.7):  # S波应明显低于R峰
+            return s_peak_candidate
+
+        return None
+
     def detect_qrs_peaks(self):
         """
         检测QRS波峰值
@@ -411,6 +550,9 @@ class PanTomkinsQRSDetectorOnline:
 
         # 步骤6: 反向延迟补偿
         self.qrs_peaks = self.apply_delay_compensation(self.qrs_peaks)
+
+        # 步骤7: 检测Q波和S波
+        self.q_waves, self.s_waves = self.detect_q_s_waves(self.qrs_peaks, signal_array)
 
         return self.qrs_peaks
 
@@ -464,7 +606,9 @@ class PanTomkinsQRSDetectorOnline:
 
             if len(self.signal) > 500:
                 peaks = self.detect_qrs_peaks()
-                print(peaks)
+                print(f"R peaks: {peaks}")
+                print(f"Q waves: {self.q_waves}")
+                print(f"S waves: {self.s_waves}")
 
                 # 更新原始信号子图
                 line1.set_ydata(self.signal)
@@ -495,14 +639,15 @@ class PanTomkinsQRSDetectorOnline:
                     line5.set_xdata(range(len(self.integrated_signal)))
                     ax5.set_ylim(np.min(self.integrated_signal), np.max(self.integrated_signal))
 
-                # 清除并重画红点
+                # 清除并重画标记点
                 for axis in [ax1, ax2, ax3, ax4, ax5]:
                     for artist in axis.lines[1:]:
                         artist.remove()
 
+                # 绘制R峰 (红色圆圈)
                 if len(peaks) > 0:
                     for v in peaks:
-                        ax1.plot(v, self.signal[v], 'ro', markersize=8)
+                        ax1.plot(v, self.signal[v], 'ro', markersize=8, label='R' if v == peaks[0] else "")
                         if self.filtered_signal is not None:
                             ax2.plot(v, self.filtered_signal[v], 'ro', markersize=8)
                         if self.differentiated_signal is not None:
@@ -511,6 +656,32 @@ class PanTomkinsQRSDetectorOnline:
                             ax4.plot(v, self.squared_signal[v], 'ro', markersize=8)
                         if self.integrated_signal is not None:
                             ax5.plot(v, self.integrated_signal[v], 'ro', markersize=8)
+
+                # 绘制Q波 (蓝色三角形向上)
+                if len(self.q_waves) > 0:
+                    for v in self.q_waves:
+                        ax1.plot(v, self.signal[v], 'b^', markersize=8, label='Q' if v == self.q_waves[0] else "")
+                        if self.filtered_signal is not None:
+                            ax2.plot(v, self.filtered_signal[v], 'b^', markersize=8)
+                        if self.differentiated_signal is not None:
+                            ax3.plot(v, self.differentiated_signal[v], 'b^', markersize=8)
+                        if self.squared_signal is not None:
+                            ax4.plot(v, self.squared_signal[v], 'b^', markersize=8)
+                        if self.integrated_signal is not None:
+                            ax5.plot(v, self.integrated_signal[v], 'b^', markersize=8)
+
+                # 绘制S波 (绿色三角形向下)
+                if len(self.s_waves) > 0:
+                    for v in self.s_waves:
+                        ax1.plot(v, self.signal[v], 'gv', markersize=8, label='S' if v == self.s_waves[0] else "")
+                        if self.filtered_signal is not None:
+                            ax2.plot(v, self.filtered_signal[v], 'gv', markersize=8)
+                        if self.differentiated_signal is not None:
+                            ax3.plot(v, self.differentiated_signal[v], 'gv', markersize=8)
+                        if self.squared_signal is not None:
+                            ax4.plot(v, self.squared_signal[v], 'gv', markersize=8)
+                        if self.integrated_signal is not None:
+                            ax5.plot(v, self.integrated_signal[v], 'gv', markersize=8)
 
                 # 更新所有子图视图
                 for axis in [ax1, ax2, ax3, ax4, ax5]:
