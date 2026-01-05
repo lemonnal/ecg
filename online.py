@@ -962,7 +962,7 @@ class RealTimeECGDetector:
                 fig.canvas.flush_events()
 
 
-class QingXunBlueToothCollector:
+class BlueToothCollector:
     def __init__(self, client=None):
         self.latest_samples = []
         self.data = []
@@ -1095,7 +1095,7 @@ async def main():
     print("开始搜索目标设备...")
 
     # 搜索设备, 查看是否匹配NUS UUID，找到后可尝试建立连接，进行读写。
-    Collector = QingXunBlueToothCollector()
+    Collector = BlueToothCollector()
     device = await BleakScanner.find_device_by_filter(Collector.match_nus_device)
     if not device:
         print("未找到目标设备")
