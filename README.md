@@ -1,19 +1,22 @@
 # ECG 心电图信号处理与 QRS 波检测工作空间
 
-本工作空间专注于心电图（ECG）信号处理算法的研究与实现，核心是基于改进的 Pan-Tomkins 算法的实时 ECG 波形检测系统（RealtimeECGDetector），同时包含深度学习方法和传统算法的探索性研究。
+本工作空间专注于心电图（ECG）信号处理算法的研究与实现，核心是基于改进的 Pan-Tomkins 算法的实时 ECG 波形检测系统，同时包含深度学习方法和传统算法的探索性研究。
 
 ---
 
 ## 目录
 
 - [项目概述](#项目概述)
-- [核心模块详解](#核心模块详解)
 - [项目结构](#项目结构)
 - [快速开始](#快速开始)
   - [环境配置](#环境配置)
   - [在线实时检测](#在线实时检测)
   - [离线文件检测](#离线文件检测)
-  - [蓝牙数据采集](#蓝牙数据采集)
+  - [蓝牙测试工具](#蓝牙测试工具)
+- [核心模块详解](#核心模块详解)
+  - [参数配置系统](#参数配置系统)
+  - [在线检测器](#在线检测器)
+  - [离线检测器](#离线检测器)
 - [算法原理](#算法原理)
   - [Pan-Tomkins 算法详解](#pan-tomkins-算法详解)
   - [关键参数优化](#关键参数优化)
@@ -49,6 +52,7 @@
 - **可视化展示**：实时显示信号处理的各个阶段，5 个子图同步显示
 - **导联自适应**：针对不同 ECG 导联（MLII, V1-V6, I, II, III, aVR, aVL, aVF）优化参数
 - **完整波形检测**：支持 P、Q、R、S、T 五种特征波的检测
+- **参数配置分离**：统一的 JSON 参数配置文件，便于调优和维护
 
 ### 核心技术
 
@@ -57,6 +61,7 @@
 - **滑动窗口阈值检测**：使用指数移动平均（EMA）平滑阈值适应信号变化
 - **相位延迟补偿**：补偿滤波和积分引入的相位延迟
 - **异步蓝牙通信**：基于 `asyncio` 和 `bleak` 实现高效蓝牙数据采集
+- **参数配置系统**：JSON 配置文件统一管理在线/离线模式的所有导联参数
 
 ### 应用场景
 
@@ -68,147 +73,6 @@
 
 ---
 
-## 核心模块详解
-
-本项目根目录包含核心的实时 ECG 波形检测系统，提供完整的 ECG 波形检测功能。
-
-### 系统架构
-
-```
-workspace-ecg/ (根目录)
-├── online.py           # 在线实时检测主程序
-├── offline.py          # 离线文件检测程序
-├── BLE_data.py         # 蓝牙数据采集工具
-├── Temp_Method.py      # 临时实验代码
-└── test.py             # 测试脚本
-```
-
-### 模块依赖关系
-
-```
-online.py
-├── RealTimeECGDetector               # 实时ECG检测器（核心）
-│   ├── bandpass_filter()             # 自适应带通滤波
-│   ├── derivative()                  # 5点中心差分微分
-│   ├── squaring()                    # 平方运算
-│   ├── moving_window_integration()   # 移动窗口积分
-│   ├── threshold_detection()         # EMA平滑的自适应阈值检测
-│   ├── apply_delay_compensation()    # 相位延迟补偿
-│   ├── detect_q_waves()              # Q波检测
-│   ├── detect_s_waves()              # S波检测
-│   ├── detect_p_waves()              # P波检测
-│   ├── detect_t_waves()              # T波检测
-│   └── detect_wave()                 # 完整PQRST波检测流程
-└── BlueToothCollector               # 蓝牙数据采集器
-    ├── start_collection()            # 开启数据采集
-    ├── handle_rx()                   # 接收数据回调
-    ├── build_protocol_packet()       # 构建协议包
-    └── packet_decode()               # 解析ECG数据包
-
-offline.py
-└── PanTomkinsQRSDetectorOffline      # 离线QRS检测器
-    └── (同上信号处理方法，针对离线文件优化)
-```
-
-### 核心特性
-
-- **扁平化结构**：核心检测文件直接位于项目根目录，便于使用和维护
-- **实时蓝牙采集**：通过 BLE 设备实时接收 ECG 信号
-- **自适应滤波**：根据导联类型自动调整带通滤波参数（1-50 Hz）
-- **完整 PQRST 检测**：检测 P、Q、R、S、T 五种特征波
-  - R 峰：QRS 复合波的主峰
-  - Q 波：R 峰前的负向波
-  - S 波：R 峰后的负向波
-  - P 波：QRS 波前的正向小波（心房去极化）
-  - T 波：QRS 波后的正向宽波（心室复极化）
-- **五阶段处理可视化**：滤波 → 微分 → 平方 → 积分 → 检测
-- **实时可视化**：5 个子图同步显示处理过程和波形标记
-- **多导联支持**：MLII, V1-V6, I, II, III, aVR, aVL, aVF
-- **滑动窗口检测**：自适应阈值适应信号变化
-- **MIT-BIH 支持**：支持标准数据库批量处理
-- **导联特定参数优化**：针对不同导联自动调整检测参数
-- **相位延迟补偿**：补偿滤波和积分引入的延迟
-- **EMA 阈值平滑**：使用指数移动平均避免阈值突变
-
-### 信号处理流程
-
-```
-ECG 信号输入
-    ↓
-1. 带通滤波 (1-50 Hz 可调)
-    - 去除基线漂移
-    - 滤除高频噪声
-    - 原始信号与滤波信号加权组合
-    ↓
-2. 微分处理 (5点中心差分)
-    - 突出 QRS 波斜率
-    - 抑制低频成分
-    ↓
-3. 平方运算
-    - 使所有值为正
-    - 放大高斜率点
-    ↓
-4. 移动窗口积分 (100ms)
-    - 平滑信号
-    - 提取 QRS 波特征
-    ↓
-5. 自适应阈值检测
-    - 滑动窗口 (约3秒)
-    - EMA 动态阈值计算
-    - 不应期保护 (200-500ms)
-    ↓
-6. 相位延迟补偿
-    - 补偿滤波和积分引入的延迟
-    - 在补偿位置附近搜索真实峰值
-    ↓
-7. PQRST 波检测
-    - Q 波检测（R峰前10-80ms）
-    - S 波检测（R峰后10-100ms）
-    - P 波检测（R峰前40-200ms）
-    - T 波检测（R峰后150-400ms）
-    ↓
-输出 PQRST 波位置
-```
-
-### 实时检测功能
-
-- 支持蓝牙低功耗（BLE）设备实时数据采集
-- 实时 PQRST 波检测与标记
-- 五阶段信号处理可视化
-- 自动适应信号幅度变化
-- 可配置的导联参数（支持 MLII, V1-V6, I, II, III, aVR, aVL, aVF）
-
-### 离线分析功能
-
-- 支持 MIT-BIH Arrhythmia Database 格式
-- 批量处理多个记录文件
-- 导联特定参数优化
-- 检测结果统计与评估
-
-### 实时显示界面
-
-程序会创建 5 个子图窗口，实时显示：
-
-1. **原始信号**（original signal）：接收到的原始 ECG 信号
-2. **滤波信号**（filtered signal）：经过带通滤波后的信号
-3. **微分信号**（differentiated signal）：微分处理后的信号
-4. **平方信号**（squared signal）：平方运算后的信号
-5. **积分信号**（integrated signal）：移动窗口积分后的信号
-
-检测到的波形标记：
-- **红色圆圈 (o)**：R 峰
-- **蓝色向上三角形 (^)**：Q 波
-- **绿色向下三角形 (v)**：S 波
-- **品红色方块 (s)**：P 波
-- **青色菱形 (D)**：T 波
-
-### 采样频率
-
-- **在线模式**：250 Hz
-- **离线模式**：360 Hz（MIT-BIH 标准）
-
----
-
 ## 项目结构
 
 ```
@@ -216,9 +80,10 @@ workspace-ecg/
 │
 ├── online.py                    # ★ 在线实时检测（蓝牙采集 + PQRST 波检测）
 ├── offline.py                   # ★ 离线文件检测（MIT-BIH 数据库）
-├── BLE_data.py                  # ★ 蓝牙数据采集工具
-├── Temp_Method.py               #    临时实验代码
-├── test.py                      #    测试脚本
+├── signal_params.json           # ★ 导联参数配置文件（JSON 格式）
+├── signal_params.py             # ★ 参数加载与管理模块
+├── ble_test.py                  # ★ 蓝牙功能测试工具
+├── unit_test.py                 # ★ 单元测试脚本
 │
 ├── qrs_detector/                # QRS 检测器参考实现
 │   ├── QRSDetectorOffline.py    #    离线检测器
@@ -242,14 +107,7 @@ workspace-ecg/
 ├── ecg_deepl_method/            # 深度学习方法
 │   ├── ecg_cnn_1/               #    CNN 实现
 │   ├── ecg-experiment-1/        #    实验 1
-│   │   ├── model.py             #       模型定义
-│   │   ├── train.py             #       训练脚本
-│   │   ├── predict.py           #       预测脚本
-│   │   └── load.py              #       数据加载
 │   ├── ecg-master/              #    主实验代码
-│   │   ├── network.py           #       网络定义
-│   │   ├── train.py             #       训练脚本
-│   │   └── predict.py           #       预测脚本
 │   ├── Dataset_Study/           #    数据集研究
 │   ├── show_data.py             #    数据可视化
 │   └── count_records.py         #    记录统计
@@ -260,16 +118,23 @@ workspace-ecg/
 │   ├── ECG learn.md             #    ECG 学习笔记
 │   ├── documents.md             #    QRS 检测标准
 │   ├── connect.md               #    12 导联电极配置
-│   ├── 心电信号识别分类算法综述.pdf
-│   ├── QRS 波群检测算法测试方案.pdf
-│   ├── YY 9706.247-2021医用电气设备标准.pdf
-│   └── 其他技术论文...
+│   └── *.pdf                    #    技术论文和标准文档
 │
-├── OM6626_Application_Manual_V0.8.pdf   # 芯片应用手册
-├── OM6626_reference_manual_V2.1.pdf     # 芯片参考手册
+├── .gitignore                   # Git 忽略规则配置
 │
 └── README.md                    # 本文件
 ```
+
+### 文件说明
+
+| 文件 | 说明 |
+|:-----|:-----|
+| [online.py](online.py) | 在线实时检测主程序，包含 `RealTimeECGDetector` 类和 `BlueToothCollector` 类 |
+| [offline.py](offline.py) | 离线文件检测程序，包含 `PanTomkinsQRSDetectorOffline` 类 |
+| [signal_params.json](signal_params.json) | 导联参数配置文件，定义 online/offline 模式的所有导联参数 |
+| [signal_params.py](signal_params.py) | 参数加载模块，提供 `get_signal_params()` 统一接口 |
+| [ble_test.py](ble_test.py) | 蓝牙功能测试工具，支持设备扫描、连接测试、数据解析等 |
+| [unit_test.py](unit_test.py) | 单元测试脚本 |
 
 ---
 
@@ -385,24 +250,157 @@ target_lead = "MLII"  # 可修改为其他导联
 
 ---
 
-### 蓝牙数据采集
+### 蓝牙测试工具
 
-`[BLE_data.py](BLE_data.py)` 提供了基础的蓝牙通信功能：
+[ble_test.py](ble_test.py) 提供了完整的蓝牙功能测试工具，支持多种测试模式：
 
-#### 扫描设备
+#### 测试功能
 
-```bash
-python BLE_data.py
+通过设置文件顶部的标志位启用不同测试：
+
+```python
+# 测试功能标志位设置
+TEST_SCAN_DEVICES = 0          # 测试1: 简单扫描蓝牙设备
+TEST_CONNECT_AND_VIEW = 0      # 测试2: 连接设备并查看服务
+TEST_DATA_PARSE = 0            # 测试3: 数据解析测试
+TEST_ECG_COLLECTION = 0        # 测试4: ECG数据采集与实时绘图(简单版)
+TEST_QINGXUN_COLLECTOR = 0     # 测试5: QingXunBlueToothCollector类完整测试
 ```
 
-此命令会列出所有附近的蓝牙设备及其 MAC 地址。
+#### 使用方法
+
+1. 将对应的测试标志位设为 `1`
+2. 运行脚本：
+
+```bash
+python ble_test.py
+```
 
 #### 主要用途
 
-- 蓝牙设备调试
+- 蓝牙设备扫描与发现
 - MAC 地址获取
-- 通信协议测试
 - 设备连接测试
+- 服务与特征值查看
+- 数据包解析测试
+- ECG 数据采集验证
+
+---
+
+## 核心模块详解
+
+### 参数配置系统
+
+项目采用统一的参数配置系统，将所有导联参数集中管理。
+
+#### signal_params.json
+
+JSON 格式的参数配置文件，定义了 online 和 offline 两种模式下各导联的参数：
+
+```json
+{
+  "online": {
+    "MLII": {
+      "low": 5,
+      "high": 15.0,
+      "filter_order": 5,
+      "original_weight": 0.2,
+      "filtered_weight": 0.8,
+      "integration_window_size": 0.100,
+      "refractory_period": 0.50,
+      "threshold_factor": 1.4,
+      ...
+    }
+  },
+  "offline": {
+    "MLII": { ... }
+  }
+}
+```
+
+#### signal_params.py
+
+参数加载模块，提供统一的参数获取接口：
+
+```python
+from signal_params import get_signal_params
+
+# 获取 online 模式下 MLII 导联的参数
+params = get_signal_params('online', 'MLII')
+
+# 获取 offline 模式下 V1 导联的参数
+params = get_signal_params('offline', 'V1')
+```
+
+#### 参数说明
+
+| 参数 | 说明 | 适用模式 |
+|:-----|:-----|:---------|
+| `low` | 带通滤波低频截止频率 (Hz) | online / offline |
+| `high` | 带通滤波高频截止频率 (Hz) | online / offline |
+| `filter_order` | Butterworth 滤波器阶数 | online / offline |
+| `original_weight` | 原始信号权重 | online / offline |
+| `filtered_weight` | 滤波信号权重 | online / offline |
+| `integration_window_size` | 积分窗口大小 (秒) | online / offline |
+| `refractory_period` | QRS 检测不应期 (秒) | online / offline |
+| `threshold_factor` | 阈值系数 | online / offline |
+| `compensation_ms` | 相位延迟补偿时间 (毫秒) | online |
+| `ema_alpha` | EMA 阈值平滑系数 | online |
+| `q_wave_*` | Q 波检测参数 | online |
+| `s_wave_*` | S 波检测参数 | online |
+| `p_wave_*` | P 波检测参数 | online |
+| `t_wave_*` | T 波检测参数 | online |
+| `detection_window_size` | 检测窗口大小 (秒) | offline |
+| `overlap_window_size` | 重叠窗口大小 (秒) | offline |
+
+### 在线检测器
+
+[online.py](online.py) 包含实时 ECG 波形检测的核心实现。
+
+#### RealTimeECGDetector 类
+
+基于 Pan-Tomkins 算法的实时 ECG 波形检测器。
+
+```python
+class RealTimeECGDetector:
+    def __init__(self, signal_name="MLII"):
+        # 初始化检测器，自动从 signal_params.json 加载参数
+        ...
+```
+
+#### BlueToothCollector 类
+
+蓝牙数据采集器，负责与 BLE 设备通信。
+
+```python
+class BlueToothCollector:
+    def __init__(self, device_param, qrs_detector):
+        # 初始化蓝牙采集器
+        ...
+
+    async def start_collection(self):
+        # 启动数据采集
+        ...
+```
+
+### 离线检测器
+
+[offline.py](offline.py) 包含离线文件分析的实现。
+
+#### PanTomkinsQRSDetectorOffline 类
+
+基于 Pan-Tomkins 算法的离线 QRS 波检测器。
+
+```python
+class PanTomkinsQRSDetectorOffline:
+    def __init__(self, signal_name="MLII"):
+        # 初始化检测器，采样频率固定为 360 Hz
+        ...
+
+    def detect_qrs(self, signal_data):
+        # 检测 QRS 波
+        ...
+```
 
 ---
 
@@ -544,18 +542,30 @@ python BLE_data.py
 
 #### 添加新设备
 
-在 `online.py` 或 `BLE_data.py` 中添加新的设备配置：
+在 [online.py](online.py) 中添加新的设备配置：
 
 ```python
-device = "YOUR_DEVICE_NAME"
-if device == "YOUR_DEVICE_NAME":
+DEVICE_NAME = "YOUR_DEVICE_NAME"
+if DEVICE_NAME == "YOUR_DEVICE_NAME":
     device_param = {
-        "name": device,
+        "name": DEVICE_NAME,
         "address": "XX:XX:XX:XX:XX:XX",  # 替换为实际 MAC 地址
         "service_uuid": "YOUR_SERVICE_UUID",
         "rx_uuid": "YOUR_RX_UUID",
         "tx_uuid": "YOUR_TX_UUID",
     }
+```
+
+#### 获取设备信息
+
+使用 [ble_test.py](ble_test.py) 扫描并获取设备信息：
+
+```python
+# 设置 ble_test.py 中的标志位
+TEST_SCAN_DEVICES = 1
+
+# 运行获取设备列表
+python ble_test.py
 ```
 
 #### 设备匹配策略
@@ -565,13 +575,6 @@ if device == "YOUR_DEVICE_NAME":
 1. **MAC 地址匹配**（最可靠）
 2. **设备名称匹配**
 3. **服务 UUID 匹配**
-
----
-
-### OM6626 芯片
-
-- **应用手册**：[OM6626_Application_Manual_V0.8.pdf](OM6626_Application_Manual_V0.8.pdf)
-- **参考手册**：[OM6626_reference_manual_V2.1.pdf](OM6626_reference_manual_V2.1.pdf)
 
 ---
 
@@ -903,7 +906,9 @@ self.signal_len = 500  # 从 750 减少到 500
 
 ### 相关项目
 
-- **核心检测模块**：项目根目录的 [online.py](online.py)、[offline.py](offline.py)、[BLE_data.py](BLE_data.py)
+- **核心检测模块**：[online.py](online.py)、[offline.py](offline.py)
+- **参数配置**：[signal_params.json](signal_params.json)、[signal_params.py](signal_params.py)
+- **蓝牙测试**：[ble_test.py](ble_test.py)
 - **qrs_detector**：参考实现 [qrs_detector/](qrs_detector/)
 - **传统算法**：[tradition/](tradition/)
 - **深度学习方法**：[ecg_deepl_method/](ecg_deepl_method/)
@@ -925,12 +930,15 @@ self.signal_len = 500  # 从 750 减少到 500
 - [x] 传统算法实现（Pan-Tomkins、希尔伯特变换）
 - [x] 深度学习方法探索
 - [x] 完整的项目文档
+- [x] 参数配置系统重构（JSON + Python 模块）
+- [x] 蓝牙测试工具（ble_test.py）
 
 ### 进行中 🚧
 
 - [ ] 性能优化（实时显示流畅度）
 - [ ] 心律失常分类
 - [ ] 算法性能评估与优化
+- [ ] 单元测试完善
 
 ### 计划中 📋
 
