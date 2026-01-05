@@ -8,7 +8,7 @@ from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 import matplotlib.pyplot as plt
 import struct
-
+from signal_params import get_signal_params
 
 QINGXUN_UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-68716563686f"
 QINGXUN_UART_RX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-68716563686f"
@@ -41,219 +41,77 @@ elif DEVICE_NAME == "PW-ECG-SL":
 # 开启交互模式，允许图形实时更新而不阻塞程序
 plt.ion()
 
+# ----------------------------------------------------------------------------
+# 配置子图信息：每个子图对应Pan-Tomkins算法的一个处理阶段
+# ----------------------------------------------------------------------------
+SUBPLOT_CONFIG = [
+    {'ylabel': 'original signal', 'color': 'b', 'description': 'Original ECG Signal'},
+    {'ylabel': 'filtered signal', 'color': 'g', 'description': 'Bandpass Filtered Signal'},
+    {'ylabel': 'differentiated signal', 'color': 'm', 'description': 'Differentiated Signal'},
+    {'ylabel': 'squared signal', 'color': 'y', 'description': 'Squared Signal'},
+    {'ylabel': 'integrated signal', 'color': 'k', 'description': 'Moving Window Integrated Signal'}
+]
+
+# ----------------------------------------------------------------------------
+# 配置PQRST波形标记样式：定义每种波形的颜色、标记形状和说明
+# ----------------------------------------------------------------------------
+WAVE_MARKER_CONFIG = {
+    'r': {'color': 'red', 'marker': 'o', 'label': 'R', 'size': 64, 'desc': 'R Peak - QRS Complex Main Peak'},
+    'q': {'color': 'blue', 'marker': '^', 'label': 'Q', 'size': 64, 'desc': 'Q Wave - Negative Wave Before R Peak'},
+    's': {'color': 'green', 'marker': 'v', 'label': 'S', 'size': 64, 'desc': 'S Wave - Negative Wave After R Peak'},
+    'p': {'color': 'magenta', 'marker': 's', 'label': 'P', 'size': 64, 'desc': 'P Wave - Atrial Depolarization'},
+    't': {'color': 'cyan', 'marker': 'D', 'label': 'T', 'size': 64, 'desc': 'T Wave - Ventricular Repolarization'}
+}
+
+# ----------------------------------------------------------------------------
 # 创建主图形窗口和5个垂直排列的子图
 # - 5个子图共享x轴（时间轴），便于对比不同处理阶段的信号
 # - figsize=(10, 8): 设置图形窗口大小为10x8英寸
-fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(5, 1, figsize=(10, 8), sharex=True)
+# ----------------------------------------------------------------------------
+NUM_SUBPLOTS = len(SUBPLOT_CONFIG)
+fig, axes = plt.subplots(NUM_SUBPLOTS, 1, figsize=(10, 8), sharex=True)
+
+# 确保axes始终是列表（单子图时plt.subplots返回单个Axes对象）
+if NUM_SUBPLOTS == 1:
+    axes = [axes]
 
 # ----------------------------------------------------------------------------
-# 创建5条曲线对象，对应Pan-Tomkins算法的5个处理阶段
+# 批量创建每个子图的信号曲线对象
 # ----------------------------------------------------------------------------
-line1, = ax1.plot([], 'b-')  # 蓝色线：原始ECG信号
-line2, = ax2.plot([], 'g-')  # 绿色线：带通滤波后的信号
-line3, = ax3.plot([], 'm-')  # 品红色线：微分后的信号
-line4, = ax4.plot([], 'y-')  # 黄色线：平方后的信号
-line5, = ax5.plot([], 'k-')  # 黑色线：移动窗口积分后的信号
+lines = []
+for ax, config in zip(axes, SUBPLOT_CONFIG):
+    line, = ax.plot([], f"{config['color']}-", label=config['description'])
+    ax.set_ylabel(config['ylabel'])
+    lines.append(line)
 
-# ----------------------------------------------------------------------------
-# 设置每个子图的y轴标签
-# ----------------------------------------------------------------------------
-ax1.set_ylabel('original signal')        # 原始信号
-ax2.set_ylabel('filtered signal')        # 滤波信号
-ax3.set_ylabel('differentiated signal')  # 微分信号
-ax4.set_ylabel('squared signal')         # 平方信号
-ax5.set_ylabel('integrated signal')      # 积分信号
+# 为第一个子图添加图例
+axes[0].legend(loc='upper right', fontsize=8)
 
 # ============================================================================
-# 预创建scatter对象用于标记PQRST波的特征点
+# 批量创建scatter对象用于标记PQRST波的特征点
 # 优势：避免每次更新时重复创建/删除对象，大幅提升性能
 # ============================================================================
+scatter_objects = {}
+for wave_type, marker_cfg in WAVE_MARKER_CONFIG.items():
+    scatter_list = []
+    for i, ax in enumerate(axes):
+        scatter = ax.scatter(
+            [], [], 
+            c=marker_cfg['color'],
+            s=marker_cfg['size'],
+            marker=marker_cfg['marker'],
+            label=marker_cfg['label'] if i == 0 else None,  # 只在第一个子图显示标签
+            zorder=5
+        )
+        scatter_list.append(scatter)
+    scatter_objects[wave_type] = scatter_list
 
 # ----------------------------------------------------------------------------
-# R峰标记（红色圆圈 'o'）- QRS波群的主峰，心室去极化的标志
+# 为了向后兼容，保留原有的变量名
 # ----------------------------------------------------------------------------
-scatter_r1 = ax1.scatter([], [], c='red', s=64, marker='o', label='R', zorder=5)
-scatter_r2 = ax2.scatter([], [], c='red', s=64, marker='o', zorder=5)
-scatter_r3 = ax3.scatter([], [], c='red', s=64, marker='o', zorder=5)
-scatter_r4 = ax4.scatter([], [], c='red', s=64, marker='o', zorder=5)
-scatter_r5 = ax5.scatter([], [], c='red', s=64, marker='o', zorder=5)
+ax1, ax2, ax3, ax4, ax5 = axes
+line1, line2, line3, line4, line5 = lines
 
-# ----------------------------------------------------------------------------
-# Q波标记（蓝色向上三角形 '^'）- R峰之前的负向波
-# ----------------------------------------------------------------------------
-scatter_q1 = ax1.scatter([], [], c='blue', s=64, marker='^', label='Q', zorder=5)
-scatter_q2 = ax2.scatter([], [], c='blue', s=64, marker='^', zorder=5)
-scatter_q3 = ax3.scatter([], [], c='blue', s=64, marker='^', zorder=5)
-scatter_q4 = ax4.scatter([], [], c='blue', s=64, marker='^', zorder=5)
-scatter_q5 = ax5.scatter([], [], c='blue', s=64, marker='^', zorder=5)
-
-# ----------------------------------------------------------------------------
-# S波标记（绿色向下三角形 'v'）- R峰之后的负向波
-# ----------------------------------------------------------------------------
-scatter_s1 = ax1.scatter([], [], c='green', s=64, marker='v', label='S', zorder=5)
-scatter_s2 = ax2.scatter([], [], c='green', s=64, marker='v', zorder=5)
-scatter_s3 = ax3.scatter([], [], c='green', s=64, marker='v', zorder=5)
-scatter_s4 = ax4.scatter([], [], c='green', s=64, marker='v', zorder=5)
-scatter_s5 = ax5.scatter([], [], c='green', s=64, marker='v', zorder=5)
-
-# ----------------------------------------------------------------------------
-# P波标记（品红色方块 's'）- QRS波群之前的正向小波，代表心房去极化
-# ----------------------------------------------------------------------------
-scatter_p1 = ax1.scatter([], [], c='magenta', s=64, marker='s', label='P', zorder=5)
-scatter_p2 = ax2.scatter([], [], c='magenta', s=64, marker='s', zorder=5)
-scatter_p3 = ax3.scatter([], [], c='magenta', s=64, marker='s', zorder=5)
-scatter_p4 = ax4.scatter([], [], c='magenta', s=64, marker='s', zorder=5)
-scatter_p5 = ax5.scatter([], [], c='magenta', s=64, marker='s', zorder=5)
-
-# ----------------------------------------------------------------------------
-# T波标记（青色菱形 'D'）- QRS波群之后的正向宽波，代表心室复极化
-# ----------------------------------------------------------------------------
-scatter_t1 = ax1.scatter([], [], c='cyan', s=64, marker='D', label='T', zorder=5)
-scatter_t2 = ax2.scatter([], [], c='cyan', s=64, marker='D', zorder=5)
-scatter_t3 = ax3.scatter([], [], c='cyan', s=64, marker='D', zorder=5)
-scatter_t4 = ax4.scatter([], [], c='cyan', s=64, marker='D', zorder=5)
-scatter_t5 = ax5.scatter([], [], c='cyan', s=64, marker='D', zorder=5)
-
-# ----------------------------------------------------------------------------
-# 将所有scatter对象按波形类型分组打包
-# 便于在update_signal_and_plot()函数中批量更新所有5个子图的标记点
-# ----------------------------------------------------------------------------
-scatter_objects = {
-    'r': [scatter_r1, scatter_r2, scatter_r3, scatter_r4, scatter_r5],  # R峰标记组
-    'q': [scatter_q1, scatter_q2, scatter_q3, scatter_q4, scatter_q5],  # Q波标记组
-    's': [scatter_s1, scatter_s2, scatter_s3, scatter_s4, scatter_s5],  # S波标记组
-    'p': [scatter_p1, scatter_p2, scatter_p3, scatter_p4, scatter_p5],  # P波标记组
-    't': [scatter_t1, scatter_t2, scatter_t3, scatter_t4, scatter_t5]   # T波标记组
-}
-
-
-def get_signal_params_online(signal_name):
-    """
-    根据ECG导联名称获取对应的信号处理参数
-    不同导联具有不同的频率特性和形态特征，需要使用不同的参数
-
-    参数:
-        signal_name: ECG导联名称 (如 "MLII", "V1", "V2", "I", "aVR" 等)
-
-    返回:
-        signal_params: 包含以下参数的字典:
-            - low: 带通滤波器低频截止频率 (Hz)
-            - high: 带通滤波器高频截止频率 (Hz)
-            - filter_order: 滤波器阶数
-            - original_weight: 原始信号权重
-            - filtered_weight: 滤波后信号权重
-            - integration_window_size: 积分窗口大小 (秒)
-            - refractory_period: QRS检测不应期 (秒)
-            - threshold_factor: 阈值系数
-            - compensation_ms: 相位延迟补偿时间 (毫秒)
-    """
-    # 基于导联特性的参数
-    if signal_name == 'V1':
-        signal_params = {
-            'low': 1, 'high': 50.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-            'integration_window_size': 0.100,
-            'refractory_period': 0.20,
-            'threshold_factor': 1.2,
-            'compensation_ms': 0.018,
-        }
-    elif signal_name == 'V2':
-        signal_params = {
-            'low': 3, 'high': 30.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-            'integration_window_size': 0.100,
-            'refractory_period': 0.20,
-            'threshold_factor': 1.3,
-            'compensation_ms': 0.018,
-        }
-    elif signal_name == 'V3':
-        signal_params = {
-            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-            'integration_window_size': 0.100,
-            'refractory_period': 0.20,
-            'threshold_factor': 1.4,
-            'compensation_ms': 0.018,
-        }
-    elif signal_name == 'V4':
-        signal_params = {
-            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-            'integration_window_size': 0.100,
-            'refractory_period': 0.20,
-            'threshold_factor': 1.4,
-            'compensation_ms': 0.018,
-        }
-    elif signal_name == 'V5':
-        signal_params = {
-            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-            'integration_window_size': 0.100,
-            'refractory_period': 0.20,
-            'threshold_factor': 1.4,
-            'compensation_ms': 0.018,
-        }
-    elif signal_name == 'V6':
-        signal_params = {
-            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-            'integration_window_size': 0.100,
-            'refractory_period': 0.20,
-            'threshold_factor': 1.4,
-            'compensation_ms': 0.018,
-        }
-    elif signal_name == 'I':
-        signal_params = {
-            'low': 0.5, 'high': 40.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-            'integration_window_size': 0.100,
-            'refractory_period': 0.40,
-            'threshold_factor': 1.3,
-            'compensation_ms': 0.018,
-        }
-    elif signal_name == 'MLII':
-        signal_params = {
-            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-            'integration_window_size': 0.100,
-            'refractory_period': 0.50,
-            'threshold_factor': 1.4,
-            'compensation_ms': 0.018,
-        }
-    elif signal_name == 'MLIII':
-        signal_params = {
-            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-            'integration_window_size': 0.100,
-            'refractory_period': 0.20,
-            'threshold_factor': 1.4,
-            'compensation_ms': 0.018,
-        }
-    elif signal_name == 'aVR':
-        signal_params = {
-            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-            'integration_window_size': 0.100,
-            'refractory_period': 0.20,
-            'threshold_factor': 1.4,
-            'compensation_ms': 0.018,
-        }
-    elif signal_name == 'aVL':
-        signal_params = {
-            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-            'integration_window_size': 0.100,
-            'refractory_period': 0.20,
-            'threshold_factor': 1.4,
-            'compensation_ms': 0.018,
-        }
-    elif signal_name == 'aVF':
-        signal_params = {
-            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-            'integration_window_size': 0.100,
-            'refractory_period': 0.20,
-            'threshold_factor': 1.4,
-            'compensation_ms': 0.018,
-        }
-    else:
-        signal_params = {
-            'low': 5, 'high': 15.0, 'filter_order': 5, 'original_weight': 0.2, 'filtered_weight': 0.8,
-            'integration_window_size': 0.100,
-            'refractory_period': 0.20,
-            'threshold_factor': 1.4,
-            'compensation_ms': 0.018,
-        }
-
-    return signal_params
 
 
 class RealTimeECGDetector:
@@ -301,35 +159,49 @@ class RealTimeECGDetector:
         self.p_waves = []    # P波位置列表
         self.t_waves = []    # T波位置列表
 
-        # 获取导联相关的处理参数
-        self.params = get_signal_params_online(signal_name=signal_name)
-        self.phase_delay_compensation_samples = int(self.params['compensation_ms'] * self.fs)
+        # 获取导联相关的处理参数并提取为直接属性
+        params = get_signal_params('online', signal_name)
+        
+        # 滤波参数
+        self.low = params['low']
+        self.high = params['high']
+        self.filter_order = params['filter_order']
+        self.original_weight = params['original_weight']
+        self.filtered_weight = params['filtered_weight']
+        
+        # 相位延迟补偿参数
+        self.phase_delay_compensation_samples = int(params['compensation_ms'] * self.fs)
 
         # 阈值平滑参数（指数移动平均 EMA）
         self.ema_threshold = None
-        self.ema_alpha = 0.1  # 平滑系数，越小变化越慢
+        self.ema_alpha = params['ema_alpha']  # 平滑系数，越小变化越慢
+
+        # QRS检测参数
+        self.integration_window_size = params['integration_window_size']
+        self.refractory_period = int(params['refractory_period'] * self.fs)
+        self.threshold_factor = params['threshold_factor']
 
         # Q波检测参数 (R峰前的负向波)
-        self.q_wave_search_start = int(0.080 * self.fs)  # 搜索窗口起点: R峰前80ms
-        self.q_wave_search_end = int(0.010 * self.fs)    # 搜索窗口终点: R峰前10ms
-        self.q_wave_min_amplitude = 0.01  # Q波最小幅值 (mV)
+        self.q_wave_search_start = int(params['q_wave_search_start'] * self.fs)
+        self.q_wave_search_end = int(params['q_wave_search_end'] * self.fs)
+        self.q_wave_min_amplitude = params['q_wave_min_amplitude']
 
         # S波检测参数 (R峰后的负向波)
-        self.s_wave_search_start = int(0.010 * self.fs)  # 搜索窗口起点: R峰后10ms
-        self.s_wave_search_end = int(0.100 * self.fs)    # 搜索窗口终点: R峰后100ms
-        self.s_wave_min_amplitude = 0.01  # S波最小幅值 (mV)
+        self.s_wave_search_start = int(params['s_wave_search_start'] * self.fs)
+        self.s_wave_search_end = int(params['s_wave_search_end'] * self.fs)
+        self.s_wave_min_amplitude = params['s_wave_min_amplitude']
 
         # P波检测参数 (QRS波之前的正向小波，心房去极化)
-        self.p_wave_search_start = int(0.200 * self.fs)  # 搜索窗口起点: R峰前200ms
-        self.p_wave_search_end = int(0.040 * self.fs)    # 搜索窗口终点: R峰前40ms
-        self.p_wave_min_amplitude = 0.02  # P波最小幅值 (mV)
-        self.p_wave_max_width = int(0.120 * self.fs)  # P波最大宽度 (采样点数)
+        self.p_wave_search_start = int(params['p_wave_search_start'] * self.fs)
+        self.p_wave_search_end = int(params['p_wave_search_end'] * self.fs)
+        self.p_wave_min_amplitude = params['p_wave_min_amplitude']
+        self.p_wave_max_width = int(params['p_wave_max_width'] * self.fs)
 
         # T波检测参数 (QRS波之后的正向宽波，心室复极化)
-        self.t_wave_search_start = int(0.150 * self.fs)  # 搜索窗口起点: R峰后150ms
-        self.t_wave_search_end = int(0.400 * self.fs)    # 搜索窗口终点: R峰后400ms
-        self.t_wave_min_amplitude = 0.05  # T波最小幅值 (mV)
-        self.t_wave_max_width = int(0.200 * self.fs)  # T波最大宽度 (采样点数)
+        self.t_wave_search_start = int(params['t_wave_search_start'] * self.fs)
+        self.t_wave_search_end = int(params['t_wave_search_end'] * self.fs)
+        self.t_wave_min_amplitude = params['t_wave_min_amplitude']
+        self.t_wave_max_width = int(params['t_wave_max_width'] * self.fs)
 
     def bandpass_filter(self, signal_data):
         """
@@ -342,23 +214,20 @@ class RealTimeECGDetector:
         返回:
             combined_signal: 滤波后与原始信号加权组合的信号
         """
-        # 获取该导联的滤波参数
-
         # 设计带通滤波器
         nyquist = 0.5 * self.fs
-        low = self.params['low'] / nyquist
-        high = self.params['high'] / nyquist
-        order = self.params['filter_order']
+        low = self.low / nyquist
+        high = self.high / nyquist
 
         # 使用 n 阶 Butterworth 滤波器 - 平衡滤波效果和信号保留
-        b, a = scipy_signal.butter(order, [low, high], btype='band')
+        b, a = scipy_signal.butter(self.filter_order, [low, high], btype='band')
 
         # 应用零相位滤波
         filtered_signal = scipy_signal.filtfilt(b, a, signal_data)
 
         # 添加原始信号的加权
-        combined_signal = (self.params["original_weight"] * signal_data
-                           + self.params["filtered_weight"] * filtered_signal)
+        combined_signal = (self.original_weight * signal_data
+                           + self.filtered_weight * filtered_signal)
         return combined_signal
 
     def derivative(self, signal_data):
@@ -406,9 +275,8 @@ class RealTimeECGDetector:
         返回:
             integrated_signal: 移动平均积分后的信号
         """
-
         # 窗口中的采样点数量
-        window_sample = int(self.params['integration_window_size'] * self.fs)
+        window_sample = int(self.integration_window_size * self.fs)
 
         # 使用卷积实现移动平均积分
         window = np.ones(window_sample) / window_sample
@@ -434,11 +302,9 @@ class RealTimeECGDetector:
         window_size = int(self.signal_len * (1 / 3))  # 检测窗口 - 信号窗口 - 1秒
         overlap_size = int(self.signal_len * (1 / 6))    # 重叠窗口大小 - 信号窗口 - 0.5秒
 
-        # 设置不应期 (避免同一QRS波被重复检测)
-        refractory_period = int(self.params['refractory_period'] * self.fs)  # 不应期（秒）
-
-        # 获取该导联的阈值系数
-        threshold_factor = self.params['threshold_factor']
+        # 使用预存储的实例属性（性能优化）
+        refractory_period = self.refractory_period  # 不应期
+        threshold_factor = self.threshold_factor    # 阈值系数
 
         all_peaks = [] # 检测到的R-peaks
 
@@ -547,9 +413,33 @@ class RealTimeECGDetector:
             return q_waves
 
         for r_peak in r_peaks:
-            q_wave = self._detect_q_wave(r_peak, signal_array)
-            if q_wave is not None:
-                q_waves.append(q_wave)
+            # 定义Q波搜索窗口 (R峰前)
+            search_start = max(0, r_peak - self.q_wave_search_start)
+            search_end = max(0, r_peak - self.q_wave_search_end)
+
+            if search_end <= search_start:
+                continue
+
+            # 在搜索窗口内找最小值点（Q波是负向波）
+            window = signal_array[search_start:search_end]
+            if len(window) == 0:
+                continue
+
+            min_idx = np.argmin(window)
+            q_peak_candidate = search_start + min_idx
+
+            # 获取R峰幅值作为参考
+            r_amplitude = signal_array[r_peak]
+            q_amplitude = signal_array[q_peak_candidate]
+
+            # 验证Q波特征:
+            # 1. Q波幅值应明显小于R峰（负向偏转）
+            # 2. 幅值差应超过最小阈值
+            amplitude_diff = r_amplitude - q_amplitude
+
+            if (amplitude_diff > self.q_wave_min_amplitude and
+                q_amplitude < r_amplitude * 0.7):  # Q波应明显低于R峰
+                q_waves.append(q_peak_candidate)
 
         return q_waves
 
@@ -571,9 +461,33 @@ class RealTimeECGDetector:
             return s_waves
 
         for r_peak in r_peaks:
-            s_wave = self._detect_s_wave(r_peak, signal_array)
-            if s_wave is not None:
-                s_waves.append(s_wave)
+            # 定义S波搜索窗口 (R峰后)
+            search_start = min(len(signal_array) - 1, r_peak + self.s_wave_search_start)
+            search_end = min(len(signal_array), r_peak + self.s_wave_search_end)
+
+            if search_end <= search_start:
+                continue
+
+            # 在搜索窗口内找最小值点（S波是负向波）
+            window = signal_array[search_start:search_end]
+            if len(window) == 0:
+                continue
+
+            min_idx = np.argmin(window)
+            s_peak_candidate = search_start + min_idx
+
+            # 获取R峰幅值作为参考
+            r_amplitude = signal_array[r_peak]
+            s_amplitude = signal_array[s_peak_candidate]
+
+            # 验证S波特征:
+            # 1. S波幅值应明显小于R峰（负向偏转）
+            # 2. 幅值差应超过最小阈值
+            amplitude_diff = r_amplitude - s_amplitude
+
+            if (amplitude_diff > self.s_wave_min_amplitude and
+                s_amplitude < r_amplitude * 0.7):  # S波应明显低于R峰
+                s_waves.append(s_peak_candidate)
 
         return s_waves
 
@@ -595,9 +509,38 @@ class RealTimeECGDetector:
             return p_waves
 
         for r_peak in r_peaks:
-            p_wave = self._detect_p_wave(r_peak, signal_array)
-            if p_wave is not None:
-                p_waves.append(p_wave)
+            # 定义P波搜索窗口 (R峰前)
+            search_start = max(0, r_peak - self.p_wave_search_start)
+            search_end = max(0, r_peak - self.p_wave_search_end)
+
+            if search_end <= search_start:
+                continue
+
+            # 在搜索窗口内找最大值点（P波通常是正向小波）
+            window = signal_array[search_start:search_end]
+            if len(window) == 0:
+                continue
+
+            max_idx = np.argmax(window)
+            p_peak_candidate = search_start + max_idx
+
+            # 获取P波和R峰幅值
+            r_amplitude = signal_array[r_peak]
+            p_amplitude = signal_array[p_peak_candidate]
+
+            # 计算基线（窗口两端平均值）
+            baseline_start = signal_array[search_start]
+            baseline_end = signal_array[search_end - 1] if search_end < len(signal_array) else baseline_start
+            baseline = (baseline_start + baseline_end) / 2
+
+            # P波幅值（相对于基线）
+            p_amplitude_from_baseline = p_amplitude - baseline
+
+            # 验证P波特征:
+            # 1. P波幅值应超过最小阈值
+            # 2. P波应明显小于R峰
+            if self.p_wave_min_amplitude < p_amplitude_from_baseline < r_amplitude * 0.25:  # P波应远小于R峰
+                p_waves.append(p_peak_candidate)
 
         return p_waves
 
@@ -619,187 +562,40 @@ class RealTimeECGDetector:
             return t_waves
 
         for r_peak in r_peaks:
-            t_wave = self._detect_t_wave(r_peak, signal_array)
-            if t_wave is not None:
-                t_waves.append(t_wave)
+            # 定义T波搜索窗口 (R峰后)
+            search_start = min(len(signal_array) - 1, r_peak + self.t_wave_search_start)
+            search_end = min(len(signal_array), r_peak + self.t_wave_search_end)
+
+            if search_end <= search_start:
+                continue
+
+            # 在搜索窗口内找最大值点（T波通常是正向宽波）
+            window = signal_array[search_start:search_end]
+            if len(window) == 0:
+                continue
+
+            max_idx = np.argmax(window)
+            t_peak_candidate = search_start + max_idx
+
+            # 获取T波和R峰幅值
+            r_amplitude = signal_array[r_peak]
+            t_amplitude = signal_array[t_peak_candidate]
+
+            # 计算基线（窗口两端平均值）
+            baseline_start = signal_array[search_start]
+            baseline_end = signal_array[search_end - 1] if search_end < len(signal_array) else baseline_start
+            baseline = (baseline_start + baseline_end) / 2
+
+            # T波幅值（相对于基线）
+            t_amplitude_from_baseline = t_amplitude - baseline
+
+            # 验证T波特征:
+            # 1. T波幅值应超过最小阈值
+            # 2. T波通常小于R峰但大于P波
+            if self.t_wave_min_amplitude < t_amplitude_from_baseline < r_amplitude * 0.6:  # T波应小于R峰
+                t_waves.append(t_peak_candidate)
 
         return t_waves
-
-    def _detect_q_wave(self, r_peak, signal_array):
-        """
-        检测单个R峰对应的Q波
-
-        参数:
-            r_peak: R峰位置
-            signal_array: 原始ECG信号数组
-
-        返回:
-            q_wave_pos: Q波位置，如果未检测到则返回None
-        """
-        # 定义Q波搜索窗口 (R峰前)
-        search_start = max(0, r_peak - self.q_wave_search_start)
-        search_end = max(0, r_peak - self.q_wave_search_end)
-
-        if search_end <= search_start:
-            return None
-
-        # 在搜索窗口内找最小值点（Q波是负向波）
-        window = signal_array[search_start:search_end]
-        if len(window) == 0:
-            return None
-
-        min_idx = np.argmin(window)
-        q_peak_candidate = search_start + min_idx
-
-        # 获取R峰幅值作为参考
-        r_amplitude = signal_array[r_peak]
-        q_amplitude = signal_array[q_peak_candidate]
-
-        # 验证Q波特征:
-        # 1. Q波幅值应明显小于R峰（负向偏转）
-        # 2. 幅值差应超过最小阈值
-        amplitude_diff = r_amplitude - q_amplitude
-
-        if (amplitude_diff > self.q_wave_min_amplitude and
-            q_amplitude < r_amplitude * 0.7):  # Q波应明显低于R峰
-            return q_peak_candidate
-
-        return None
-
-    def _detect_s_wave(self, r_peak, signal_array):
-        """
-        检测单个R峰对应的S波
-
-        参数:
-            r_peak: R峰位置
-            signal_array: 原始ECG信号数组
-
-        返回:
-            s_wave_pos: S波位置，如果未检测到则返回None
-        """
-        # 定义S波搜索窗口 (R峰后)
-        search_start = min(len(signal_array) - 1, r_peak + self.s_wave_search_start)
-        search_end = min(len(signal_array), r_peak + self.s_wave_search_end)
-
-        if search_end <= search_start:
-            return None
-
-        # 在搜索窗口内找最小值点（S波是负向波）
-        window = signal_array[search_start:search_end]
-        if len(window) == 0:
-            return None
-
-        min_idx = np.argmin(window)
-        s_peak_candidate = search_start + min_idx
-
-        # 获取R峰幅值作为参考
-        r_amplitude = signal_array[r_peak]
-        s_amplitude = signal_array[s_peak_candidate]
-
-        # 验证S波特征:
-        # 1. S波幅值应明显小于R峰（负向偏转）
-        # 2. 幅值差应超过最小阈值
-        amplitude_diff = r_amplitude - s_amplitude
-
-        if (amplitude_diff > self.s_wave_min_amplitude and
-            s_amplitude < r_amplitude * 0.7):  # S波应明显低于R峰
-            return s_peak_candidate
-
-        return None
-
-    def _detect_p_wave(self, r_peak, signal_array):
-        """
-        检测单个R峰对应的P波
-        P波在QRS波之前，代表心房去极化
-
-        参数:
-            r_peak: R峰位置
-            signal_array: 原始ECG信号数组
-
-        返回:
-            p_wave_pos: P波位置，如果未检测到则返回None
-        """
-        # 定义P波搜索窗口 (R峰前)
-        search_start = max(0, r_peak - self.p_wave_search_start)
-        search_end = max(0, r_peak - self.p_wave_search_end)
-
-        if search_end <= search_start:
-            return None
-
-        # 在搜索窗口内找最大值点（P波通常是正向小波）
-        window = signal_array[search_start:search_end]
-        if len(window) == 0:
-            return None
-
-        max_idx = np.argmax(window)
-        p_peak_candidate = search_start + max_idx
-
-        # 获取P波和R峰幅值
-        r_amplitude = signal_array[r_peak]
-        p_amplitude = signal_array[p_peak_candidate]
-
-        # 计算基线（窗口两端平均值）
-        baseline_start = signal_array[search_start]
-        baseline_end = signal_array[search_end - 1] if search_end < len(signal_array) else baseline_start
-        baseline = (baseline_start + baseline_end) / 2
-
-        # P波幅值（相对于基线）
-        p_amplitude_from_baseline = p_amplitude - baseline
-
-        # 验证P波特征:
-        # 1. P波幅值应超过最小阈值
-        # 2. P波应明显小于R峰
-        if self.p_wave_min_amplitude < p_amplitude_from_baseline < r_amplitude * 0.25:  # P波应远小于R峰
-            return p_peak_candidate
-
-        return None
-
-    def _detect_t_wave(self, r_peak, signal_array):
-        """
-        检测单个R峰对应的T波
-        T波在QRS波之后，代表心室复极化
-
-        参数:
-            r_peak: R峰位置
-            signal_array: 原始ECG信号数组
-
-        返回:
-            t_wave_pos: T波位置，如果未检测到则返回None
-        """
-        # 定义T波搜索窗口 (R峰后)
-        search_start = min(len(signal_array) - 1, r_peak + self.t_wave_search_start)
-        search_end = min(len(signal_array), r_peak + self.t_wave_search_end)
-
-        if search_end <= search_start:
-            return None
-
-        # 在搜索窗口内找最大值点（T波通常是正向宽波）
-        window = signal_array[search_start:search_end]
-        if len(window) == 0:
-            return None
-
-        max_idx = np.argmax(window)
-        t_peak_candidate = search_start + max_idx
-
-        # 获取T波和R峰幅值
-        r_amplitude = signal_array[r_peak]
-        t_amplitude = signal_array[t_peak_candidate]
-
-        # 计算基线（窗口两端平均值）
-        baseline_start = signal_array[search_start]
-        baseline_end = signal_array[search_end - 1] if search_end < len(signal_array) else baseline_start
-        baseline = (baseline_start + baseline_end) / 2
-
-        # T波幅值（相对于基线）
-        t_amplitude_from_baseline = t_amplitude - baseline
-
-        # 验证T波特征:
-        # 1. T波幅值应超过最小阈值
-        # 2. T波通常小于R峰但大于P波
-        if self.t_wave_min_amplitude < t_amplitude_from_baseline < r_amplitude * 0.6:  # T波应小于R峰
-            return t_peak_candidate
-
-        return None
 
     def detect_wave(self):
         """

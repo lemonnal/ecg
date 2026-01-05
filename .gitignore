@@ -108,7 +108,6 @@ logs/
 output/
 results/
 outputs/
-*.json
 
 # ==================
 # 文档和图片
