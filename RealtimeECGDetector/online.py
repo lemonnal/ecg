@@ -34,19 +34,97 @@ elif DEVICE_NAME == "PW-ECG-SL":
         "tx_uuid": QINGXUN_UART_TX_CHAR_UUID,
     }
 
-# 初始化时创建子图布局
+# ============================================================================
+# 初始化matplotlib图形显示系统
+# ============================================================================
+
+# 开启交互模式，允许图形实时更新而不阻塞程序
 plt.ion()
+
+# 创建主图形窗口和5个垂直排列的子图
+# - 5个子图共享x轴（时间轴），便于对比不同处理阶段的信号
+# - figsize=(10, 8): 设置图形窗口大小为10x8英寸
 fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(5, 1, figsize=(10, 8), sharex=True)
-line1, = ax1.plot([], 'b-')
-line2, = ax2.plot([], 'g-')
-line3, = ax3.plot([], 'm-')
-line4, = ax4.plot([], 'y-')
-line5, = ax5.plot([], 'k-')
-ax1.set_ylabel('original signal')
-ax2.set_ylabel('filtered signal')
-ax3.set_ylabel('differentiated signal')
-ax4.set_ylabel('squared signal')
-ax5.set_ylabel('integrated signal')
+
+# ----------------------------------------------------------------------------
+# 创建5条曲线对象，对应Pan-Tomkins算法的5个处理阶段
+# ----------------------------------------------------------------------------
+line1, = ax1.plot([], 'b-')  # 蓝色线：原始ECG信号
+line2, = ax2.plot([], 'g-')  # 绿色线：带通滤波后的信号
+line3, = ax3.plot([], 'm-')  # 品红色线：微分后的信号
+line4, = ax4.plot([], 'y-')  # 黄色线：平方后的信号
+line5, = ax5.plot([], 'k-')  # 黑色线：移动窗口积分后的信号
+
+# ----------------------------------------------------------------------------
+# 设置每个子图的y轴标签
+# ----------------------------------------------------------------------------
+ax1.set_ylabel('original signal')        # 原始信号
+ax2.set_ylabel('filtered signal')        # 滤波信号
+ax3.set_ylabel('differentiated signal')  # 微分信号
+ax4.set_ylabel('squared signal')         # 平方信号
+ax5.set_ylabel('integrated signal')      # 积分信号
+
+# ============================================================================
+# 预创建scatter对象用于标记PQRST波的特征点
+# 优势：避免每次更新时重复创建/删除对象，大幅提升性能
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# R峰标记（红色圆圈 'o'）- QRS波群的主峰，心室去极化的标志
+# ----------------------------------------------------------------------------
+scatter_r1 = ax1.scatter([], [], c='red', s=64, marker='o', label='R', zorder=5)
+scatter_r2 = ax2.scatter([], [], c='red', s=64, marker='o', zorder=5)
+scatter_r3 = ax3.scatter([], [], c='red', s=64, marker='o', zorder=5)
+scatter_r4 = ax4.scatter([], [], c='red', s=64, marker='o', zorder=5)
+scatter_r5 = ax5.scatter([], [], c='red', s=64, marker='o', zorder=5)
+
+# ----------------------------------------------------------------------------
+# Q波标记（蓝色向上三角形 '^'）- R峰之前的负向波
+# ----------------------------------------------------------------------------
+scatter_q1 = ax1.scatter([], [], c='blue', s=64, marker='^', label='Q', zorder=5)
+scatter_q2 = ax2.scatter([], [], c='blue', s=64, marker='^', zorder=5)
+scatter_q3 = ax3.scatter([], [], c='blue', s=64, marker='^', zorder=5)
+scatter_q4 = ax4.scatter([], [], c='blue', s=64, marker='^', zorder=5)
+scatter_q5 = ax5.scatter([], [], c='blue', s=64, marker='^', zorder=5)
+
+# ----------------------------------------------------------------------------
+# S波标记（绿色向下三角形 'v'）- R峰之后的负向波
+# ----------------------------------------------------------------------------
+scatter_s1 = ax1.scatter([], [], c='green', s=64, marker='v', label='S', zorder=5)
+scatter_s2 = ax2.scatter([], [], c='green', s=64, marker='v', zorder=5)
+scatter_s3 = ax3.scatter([], [], c='green', s=64, marker='v', zorder=5)
+scatter_s4 = ax4.scatter([], [], c='green', s=64, marker='v', zorder=5)
+scatter_s5 = ax5.scatter([], [], c='green', s=64, marker='v', zorder=5)
+
+# ----------------------------------------------------------------------------
+# P波标记（品红色方块 's'）- QRS波群之前的正向小波，代表心房去极化
+# ----------------------------------------------------------------------------
+scatter_p1 = ax1.scatter([], [], c='magenta', s=64, marker='s', label='P', zorder=5)
+scatter_p2 = ax2.scatter([], [], c='magenta', s=64, marker='s', zorder=5)
+scatter_p3 = ax3.scatter([], [], c='magenta', s=64, marker='s', zorder=5)
+scatter_p4 = ax4.scatter([], [], c='magenta', s=64, marker='s', zorder=5)
+scatter_p5 = ax5.scatter([], [], c='magenta', s=64, marker='s', zorder=5)
+
+# ----------------------------------------------------------------------------
+# T波标记（青色菱形 'D'）- QRS波群之后的正向宽波，代表心室复极化
+# ----------------------------------------------------------------------------
+scatter_t1 = ax1.scatter([], [], c='cyan', s=64, marker='D', label='T', zorder=5)
+scatter_t2 = ax2.scatter([], [], c='cyan', s=64, marker='D', zorder=5)
+scatter_t3 = ax3.scatter([], [], c='cyan', s=64, marker='D', zorder=5)
+scatter_t4 = ax4.scatter([], [], c='cyan', s=64, marker='D', zorder=5)
+scatter_t5 = ax5.scatter([], [], c='cyan', s=64, marker='D', zorder=5)
+
+# ----------------------------------------------------------------------------
+# 将所有scatter对象按波形类型分组打包
+# 便于在update_signal_and_plot()函数中批量更新所有5个子图的标记点
+# ----------------------------------------------------------------------------
+scatter_objects = {
+    'r': [scatter_r1, scatter_r2, scatter_r3, scatter_r4, scatter_r5],  # R峰标记组
+    'q': [scatter_q1, scatter_q2, scatter_q3, scatter_q4, scatter_q5],  # Q波标记组
+    's': [scatter_s1, scatter_s2, scatter_s3, scatter_s4, scatter_s5],  # S波标记组
+    'p': [scatter_p1, scatter_p2, scatter_p3, scatter_p4, scatter_p5],  # P波标记组
+    't': [scatter_t1, scatter_t2, scatter_t3, scatter_t4, scatter_t5]   # T波标记组
+}
 
 
 def get_signal_params_online(signal_name):
@@ -795,7 +873,7 @@ class RealTimeECGDetector:
                 sample = self.signal[-1]
             self.signal.append(sample)
 
-            if len(self.signal) > 500 and sample_show_cnt % 12 == 0:
+            if len(self.signal) > 500 and sample_show_cnt % 10 == 0:
                 peaks = self.detect_wave()
                 # print(f"R peaks: {peaks}")
                 # print(f"Q waves: {self.q_waves}")
@@ -803,111 +881,85 @@ class RealTimeECGDetector:
                 # print(f"P waves: {self.p_waves}")
                 # print(f"T waves: {self.t_waves}")
 
+                # 转换为numpy数组方便计算ylim
+                signal_array = np.array(list(self.signal))
+                
                 # 更新原始信号子图
-                line1.set_ydata(self.signal)
-                line1.set_xdata(range(len(self.signal)))
-                ax1.set_ylim(np.min(self.signal), np.max(self.signal))
+                line1.set_ydata(signal_array)
+                line1.set_xdata(range(len(signal_array)))
+                ax1.set_ylim(np.min(signal_array), np.max(signal_array))
 
-                # 更新滤波信号子图
-                if self.filtered_signal is not None:
-                    line2.set_ydata(self.filtered_signal)
-                    line2.set_xdata(range(len(self.filtered_signal)))
-                    ax2.set_ylim(np.min(self.filtered_signal), np.max(self.filtered_signal))
+                # 准备5个子图的信号数据
+                signals = [
+                    signal_array,
+                    self.filtered_signal,
+                    self.differentiated_signal,
+                    self.squared_signal,
+                    self.integrated_signal
+                ]
+                lines = [line1, line2, line3, line4, line5]
+                axes = [ax1, ax2, ax3, ax4, ax5]
 
-                # 更新微分信号子图
-                if self.differentiated_signal is not None:
-                    line3.set_ydata(self.differentiated_signal)
-                    line3.set_xdata(range(len(self.differentiated_signal)))
-                    ax3.set_ylim(np.min(self.differentiated_signal), np.max(self.differentiated_signal))
+                # 批量更新其他信号子图
+                for i in range(1, 5):
+                    if signals[i] is not None:
+                        lines[i].set_ydata(signals[i])
+                        lines[i].set_xdata(range(len(signals[i])))
+                        axes[i].set_ylim(np.min(signals[i]), np.max(signals[i]))
 
-                # 更新平方信号子图
-                if self.squared_signal is not None:
-                    line4.set_ydata(self.squared_signal)
-                    line4.set_xdata(range(len(self.squared_signal)))
-                    ax4.set_ylim(np.min(self.squared_signal), np.max(self.squared_signal))
-
-                # 更新积分信号子图
-                if self.integrated_signal is not None:
-                    line5.set_ydata(self.integrated_signal)
-                    line5.set_xdata(range(len(self.integrated_signal)))
-                    ax5.set_ylim(np.min(self.integrated_signal), np.max(self.integrated_signal))
-
-                # 清除并重画标记点
-                for axis in [ax1, ax2, ax3, ax4, ax5]:
-                    for artist in axis.lines[1:]:
-                        artist.remove()
-
-                # 绘制R峰 (红色圆圈)
+                # 使用高效的scatter对象更新标记点（不需要清除和重新创建）
+                # 更新R峰标记
                 if len(peaks) > 0:
-                    for v in peaks:
-                        ax1.plot(v, self.signal[v], 'ro', markersize=8, label='R' if v == peaks[0] else "")
-                        if self.filtered_signal is not None:
-                            ax2.plot(v, self.filtered_signal[v], 'ro', markersize=8)
-                        if self.differentiated_signal is not None:
-                            ax3.plot(v, self.differentiated_signal[v], 'ro', markersize=8)
-                        if self.squared_signal is not None:
-                            ax4.plot(v, self.squared_signal[v], 'ro', markersize=8)
-                        if self.integrated_signal is not None:
-                            ax5.plot(v, self.integrated_signal[v], 'ro', markersize=8)
+                    for i, scatter in enumerate(scatter_objects['r']):
+                        if signals[i] is not None:
+                            scatter.set_offsets(np.c_[peaks, signals[i][peaks]])
+                else:
+                    for scatter in scatter_objects['r']:
+                        scatter.set_offsets(np.empty((0, 2)))
 
-                # 绘制Q波 (蓝色三角形向上)
+                # 更新Q波标记
                 if len(self.q_waves) > 0:
-                    for v in self.q_waves:
-                        ax1.plot(v, self.signal[v], 'b^', markersize=8, label='Q' if v == self.q_waves[0] else "")
-                        if self.filtered_signal is not None:
-                            ax2.plot(v, self.filtered_signal[v], 'b^', markersize=8)
-                        if self.differentiated_signal is not None:
-                            ax3.plot(v, self.differentiated_signal[v], 'b^', markersize=8)
-                        if self.squared_signal is not None:
-                            ax4.plot(v, self.squared_signal[v], 'b^', markersize=8)
-                        if self.integrated_signal is not None:
-                            ax5.plot(v, self.integrated_signal[v], 'b^', markersize=8)
+                    for i, scatter in enumerate(scatter_objects['q']):
+                        if signals[i] is not None:
+                            scatter.set_offsets(np.c_[self.q_waves, signals[i][self.q_waves]])
+                else:
+                    for scatter in scatter_objects['q']:
+                        scatter.set_offsets(np.empty((0, 2)))
 
-                # 绘制S波 (绿色三角形向下)
+                # 更新S波标记
                 if len(self.s_waves) > 0:
-                    for v in self.s_waves:
-                        ax1.plot(v, self.signal[v], 'gv', markersize=8, label='S' if v == self.s_waves[0] else "")
-                        if self.filtered_signal is not None:
-                            ax2.plot(v, self.filtered_signal[v], 'gv', markersize=8)
-                        if self.differentiated_signal is not None:
-                            ax3.plot(v, self.differentiated_signal[v], 'gv', markersize=8)
-                        if self.squared_signal is not None:
-                            ax4.plot(v, self.squared_signal[v], 'gv', markersize=8)
-                        if self.integrated_signal is not None:
-                            ax5.plot(v, self.integrated_signal[v], 'gv', markersize=8)
+                    for i, scatter in enumerate(scatter_objects['s']):
+                        if signals[i] is not None:
+                            scatter.set_offsets(np.c_[self.s_waves, signals[i][self.s_waves]])
+                else:
+                    for scatter in scatter_objects['s']:
+                        scatter.set_offsets(np.empty((0, 2)))
 
-                # 绘制P波 (品红色方块)
+                # 更新P波标记
                 if len(self.p_waves) > 0:
-                    for v in self.p_waves:
-                        ax1.plot(v, self.signal[v], 'ms', markersize=8, label='P' if v == self.p_waves[0] else "")
-                        if self.filtered_signal is not None:
-                            ax2.plot(v, self.filtered_signal[v], 'ms', markersize=8)
-                        if self.differentiated_signal is not None:
-                            ax3.plot(v, self.differentiated_signal[v], 'ms', markersize=8)
-                        if self.squared_signal is not None:
-                            ax4.plot(v, self.squared_signal[v], 'ms', markersize=8)
-                        if self.integrated_signal is not None:
-                            ax5.plot(v, self.integrated_signal[v], 'ms', markersize=8)
+                    for i, scatter in enumerate(scatter_objects['p']):
+                        if signals[i] is not None:
+                            scatter.set_offsets(np.c_[self.p_waves, signals[i][self.p_waves]])
+                else:
+                    for scatter in scatter_objects['p']:
+                        scatter.set_offsets(np.empty((0, 2)))
 
-                # 绘制T波 (青色菱形)
+                # 更新T波标记
                 if len(self.t_waves) > 0:
-                    for v in self.t_waves:
-                        ax1.plot(v, self.signal[v], 'cD', markersize=8, label='T' if v == self.t_waves[0] else "")
-                        if self.filtered_signal is not None:
-                            ax2.plot(v, self.filtered_signal[v], 'cD', markersize=8)
-                        if self.differentiated_signal is not None:
-                            ax3.plot(v, self.differentiated_signal[v], 'cD', markersize=8)
-                        if self.squared_signal is not None:
-                            ax4.plot(v, self.squared_signal[v], 'cD', markersize=8)
-                        if self.integrated_signal is not None:
-                            ax5.plot(v, self.integrated_signal[v], 'cD', markersize=8)
+                    for i, scatter in enumerate(scatter_objects['t']):
+                        if signals[i] is not None:
+                            scatter.set_offsets(np.c_[self.t_waves, signals[i][self.t_waves]])
+                else:
+                    for scatter in scatter_objects['t']:
+                        scatter.set_offsets(np.empty((0, 2)))
 
-                # 更新所有子图视图
-                for axis in [ax1, ax2, ax3, ax4, ax5]:
-                    axis.relim()
-                    axis.autoscale_view()
+                # 只对第一个子图更新布局（其他子图共享x轴，会自动更新）
+                ax1.relim()
+                ax1.autoscale_view(scalex=True, scaley=False)
 
-                plt.pause(0.001)
+                # 使用draw_idle()替代pause()，更高效
+                fig.canvas.draw_idle()
+                fig.canvas.flush_events()
 
 
 class QingXunBlueToothCollector:
