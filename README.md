@@ -901,12 +901,6 @@ self.signal_len = 500  # 从 750 减少到 500
 - **MIT-BIH 数据库说明**：[Information/MIT-BIH数据库.md](Information/MIT-BIH数据库.md)
 - **ECG 学习笔记**：[Information/ECG learn.md](Information/ECG%20learn.md)
 
-### 硬件文档
-
-- **OM6626 应用手册**：[OM6626_Application_Manual_V0.8.pdf](OM6626_Application_Manual_V0.8.pdf)
-- **OM6626 参考手册**：[OM6626_reference_manual_V2.1.pdf](OM6626_reference_manual_V2.1.pdf)
-- **行业标准**：[YY 9706.247-2021医用电气设备标准.pdf](YY%209706.247-2021医用电气设备%20第2-47部分：动态心电图系统的基本安全和基本性能专用要求.pdf)
-
 ### 相关项目
 
 - **核心检测模块**：项目根目录的 [online.py](online.py)、[offline.py](offline.py)、[BLE_data.py](BLE_data.py)
@@ -935,7 +929,6 @@ self.signal_len = 500  # 从 750 减少到 500
 ### 进行中 🚧
 
 - [ ] 性能优化（实时显示流畅度）
-- [ ] 多导联同步检测
 - [ ] 心律失常分类
 - [ ] 算法性能评估与优化
 
