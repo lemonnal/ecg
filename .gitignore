@@ -1,4 +1,7 @@
 /Information
+/ecg_deepl_method
+/qrs_detector
+/tradition
 
 # ==================
 # IDE 配置
@@ -11,7 +14,6 @@
 
 # ==================
 # Python 相关
-# ==================
 # 字节码文件
 __pycache__/
 *.py[cod]
