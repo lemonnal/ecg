@@ -34,18 +34,6 @@ elif DEVICE_NAME == "PW-ECG-SL":
         "tx_uuid": QINGXUN_UART_TX_CHAR_UUID,
     }
 
-
-# 全局变量: ECG信号电压范围 (用于绘图y轴范围)
-ECG_VOLTAGE_MAX = -0xffffff
-ECG_VOLTAGE_MIN = 0xffffff
-
-
-# # 创建一个图形窗口
-# plt.ion()  # 开启交互模式
-# fig, ax = plt.subplots()
-# line, = ax.plot([])
-# ax.set_ylim(10, 15)  # 设置y轴范围
-
 # 初始化时创建子图布局
 plt.ion()
 fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(5, 1, figsize=(10, 8), sharex=True)
@@ -579,7 +567,6 @@ class RealTimeECGDetector:
 
         # 在搜索窗口内找最小值点（Q波是负向波）
         window = signal_array[search_start:search_end]
-        print('Q wave search window signal:', window)
         if len(window) == 0:
             return None
 
@@ -800,13 +787,6 @@ class RealTimeECGDetector:
         参数:
             samples: 新接收的采样数据列表 (单位: mV)
         """
-        global ECG_VOLTAGE_MAX
-        global ECG_VOLTAGE_MIN
-
-        print(self.params)
-        ECG_VOLTAGE_MAX = max(samples) if ECG_VOLTAGE_MAX < max(samples) else ECG_VOLTAGE_MAX
-        ECG_VOLTAGE_MIN = min(samples) if ECG_VOLTAGE_MIN > min(samples) else ECG_VOLTAGE_MIN
-        voltage_delta = ECG_VOLTAGE_MAX - ECG_VOLTAGE_MIN
 
         for sample in samples:
 
@@ -814,144 +794,120 @@ class RealTimeECGDetector:
             if len(self.signal) > 500 and sample  < 2.0:
                 sample = self.signal[-1]
             self.signal.append(sample)
-            # print(len(self.signal))
 
-            # if len(self.signal) > 500:
-            #     #当信号缓冲区更新时自动进行QRS检测
-            #     peaks = self.detect_wave()
-            #     print(peaks)
-            #
-            #     line.set_ydata(self.signal)
-            #     line.set_xdata(range(len(self.signal)))
-            #
-            #     # 清除之前的红点
-            #     for artist in ax.lines[1:]:
-            #         artist.remove()
-            #
-            #     if len(peaks) > 0:
-            #         # 在QRS波处画红圈
-            #         for v in peaks:
-            #             ax.plot(v, self.signal[v], 'ro', markersize=8)
-            #
-            #     ax.set_ylim(voltage_mV_min - 0.2 * voltage_delta, voltage_mV_max + 0.2 * voltage_delta)
-            #     ax.relim()
-            #     ax.autoscale_view()
-            #     plt.pause(0.01)  # 更新图形，可以根据需要调整刷新频率
+        if len(self.signal) > 500:
+            peaks = self.detect_wave()
+            # print(f"R peaks: {peaks}")
+            # print(f"Q waves: {self.q_waves}")
+            # print(f"S waves: {self.s_waves}")
+            # print(f"P waves: {self.p_waves}")
+            # print(f"T waves: {self.t_waves}")
 
+            # 更新原始信号子图
+            line1.set_ydata(self.signal)
+            line1.set_xdata(range(len(self.signal)))
+            ax1.set_ylim(np.min(self.signal), np.max(self.signal))
 
-            if len(self.signal) > 500:
-                peaks = self.detect_wave()
-                print(f"R peaks: {peaks}")
-                print(f"Q waves: {self.q_waves}")
-                print(f"S waves: {self.s_waves}")
-                print(f"P waves: {self.p_waves}")
-                print(f"T waves: {self.t_waves}")
+            # 更新滤波信号子图
+            if self.filtered_signal is not None:
+                line2.set_ydata(self.filtered_signal)
+                line2.set_xdata(range(len(self.filtered_signal)))
+                ax2.set_ylim(np.min(self.filtered_signal), np.max(self.filtered_signal))
 
-                # 更新原始信号子图
-                line1.set_ydata(self.signal)
-                line1.set_xdata(range(len(self.signal)))
-                ax1.set_ylim(np.min(self.signal), np.max(self.signal))
+            # 更新微分信号子图
+            if self.differentiated_signal is not None:
+                line3.set_ydata(self.differentiated_signal)
+                line3.set_xdata(range(len(self.differentiated_signal)))
+                ax3.set_ylim(np.min(self.differentiated_signal), np.max(self.differentiated_signal))
 
-                # 更新滤波信号子图
-                if self.filtered_signal is not None:
-                    line2.set_ydata(self.filtered_signal)
-                    line2.set_xdata(range(len(self.filtered_signal)))
-                    ax2.set_ylim(np.min(self.filtered_signal), np.max(self.filtered_signal))
+            # 更新平方信号子图
+            if self.squared_signal is not None:
+                line4.set_ydata(self.squared_signal)
+                line4.set_xdata(range(len(self.squared_signal)))
+                ax4.set_ylim(np.min(self.squared_signal), np.max(self.squared_signal))
 
-                # 更新微分信号子图
-                if self.differentiated_signal is not None:
-                    line3.set_ydata(self.differentiated_signal)
-                    line3.set_xdata(range(len(self.differentiated_signal)))
-                    ax3.set_ylim(np.min(self.differentiated_signal), np.max(self.differentiated_signal))
+            # 更新积分信号子图
+            if self.integrated_signal is not None:
+                line5.set_ydata(self.integrated_signal)
+                line5.set_xdata(range(len(self.integrated_signal)))
+                ax5.set_ylim(np.min(self.integrated_signal), np.max(self.integrated_signal))
 
-                # 更新平方信号子图
-                if self.squared_signal is not None:
-                    line4.set_ydata(self.squared_signal)
-                    line4.set_xdata(range(len(self.squared_signal)))
-                    ax4.set_ylim(np.min(self.squared_signal), np.max(self.squared_signal))
+            # 清除并重画标记点
+            for axis in [ax1, ax2, ax3, ax4, ax5]:
+                for artist in axis.lines[1:]:
+                    artist.remove()
 
-                # 更新积分信号子图
-                if self.integrated_signal is not None:
-                    line5.set_ydata(self.integrated_signal)
-                    line5.set_xdata(range(len(self.integrated_signal)))
-                    ax5.set_ylim(np.min(self.integrated_signal), np.max(self.integrated_signal))
+            # 绘制R峰 (红色圆圈)
+            if len(peaks) > 0:
+                for v in peaks:
+                    ax1.plot(v, self.signal[v], 'ro', markersize=8, label='R' if v == peaks[0] else "")
+                    if self.filtered_signal is not None:
+                        ax2.plot(v, self.filtered_signal[v], 'ro', markersize=8)
+                    if self.differentiated_signal is not None:
+                        ax3.plot(v, self.differentiated_signal[v], 'ro', markersize=8)
+                    if self.squared_signal is not None:
+                        ax4.plot(v, self.squared_signal[v], 'ro', markersize=8)
+                    if self.integrated_signal is not None:
+                        ax5.plot(v, self.integrated_signal[v], 'ro', markersize=8)
 
-                # 清除并重画标记点
-                for axis in [ax1, ax2, ax3, ax4, ax5]:
-                    for artist in axis.lines[1:]:
-                        artist.remove()
+            # 绘制Q波 (蓝色三角形向上)
+            if len(self.q_waves) > 0:
+                for v in self.q_waves:
+                    ax1.plot(v, self.signal[v], 'b^', markersize=8, label='Q' if v == self.q_waves[0] else "")
+                    if self.filtered_signal is not None:
+                        ax2.plot(v, self.filtered_signal[v], 'b^', markersize=8)
+                    if self.differentiated_signal is not None:
+                        ax3.plot(v, self.differentiated_signal[v], 'b^', markersize=8)
+                    if self.squared_signal is not None:
+                        ax4.plot(v, self.squared_signal[v], 'b^', markersize=8)
+                    if self.integrated_signal is not None:
+                        ax5.plot(v, self.integrated_signal[v], 'b^', markersize=8)
 
-                # 绘制R峰 (红色圆圈)
-                if len(peaks) > 0:
-                    for v in peaks:
-                        ax1.plot(v, self.signal[v], 'ro', markersize=8, label='R' if v == peaks[0] else "")
-                        if self.filtered_signal is not None:
-                            ax2.plot(v, self.filtered_signal[v], 'ro', markersize=8)
-                        if self.differentiated_signal is not None:
-                            ax3.plot(v, self.differentiated_signal[v], 'ro', markersize=8)
-                        if self.squared_signal is not None:
-                            ax4.plot(v, self.squared_signal[v], 'ro', markersize=8)
-                        if self.integrated_signal is not None:
-                            ax5.plot(v, self.integrated_signal[v], 'ro', markersize=8)
+            # 绘制S波 (绿色三角形向下)
+            if len(self.s_waves) > 0:
+                for v in self.s_waves:
+                    ax1.plot(v, self.signal[v], 'gv', markersize=8, label='S' if v == self.s_waves[0] else "")
+                    if self.filtered_signal is not None:
+                        ax2.plot(v, self.filtered_signal[v], 'gv', markersize=8)
+                    if self.differentiated_signal is not None:
+                        ax3.plot(v, self.differentiated_signal[v], 'gv', markersize=8)
+                    if self.squared_signal is not None:
+                        ax4.plot(v, self.squared_signal[v], 'gv', markersize=8)
+                    if self.integrated_signal is not None:
+                        ax5.plot(v, self.integrated_signal[v], 'gv', markersize=8)
 
-                # 绘制Q波 (蓝色三角形向上)
-                if len(self.q_waves) > 0:
-                    for v in self.q_waves:
-                        ax1.plot(v, self.signal[v], 'b^', markersize=8, label='Q' if v == self.q_waves[0] else "")
-                        if self.filtered_signal is not None:
-                            ax2.plot(v, self.filtered_signal[v], 'b^', markersize=8)
-                        if self.differentiated_signal is not None:
-                            ax3.plot(v, self.differentiated_signal[v], 'b^', markersize=8)
-                        if self.squared_signal is not None:
-                            ax4.plot(v, self.squared_signal[v], 'b^', markersize=8)
-                        if self.integrated_signal is not None:
-                            ax5.plot(v, self.integrated_signal[v], 'b^', markersize=8)
+            # 绘制P波 (品红色方块)
+            if len(self.p_waves) > 0:
+                for v in self.p_waves:
+                    ax1.plot(v, self.signal[v], 'ms', markersize=8, label='P' if v == self.p_waves[0] else "")
+                    if self.filtered_signal is not None:
+                        ax2.plot(v, self.filtered_signal[v], 'ms', markersize=8)
+                    if self.differentiated_signal is not None:
+                        ax3.plot(v, self.differentiated_signal[v], 'ms', markersize=8)
+                    if self.squared_signal is not None:
+                        ax4.plot(v, self.squared_signal[v], 'ms', markersize=8)
+                    if self.integrated_signal is not None:
+                        ax5.plot(v, self.integrated_signal[v], 'ms', markersize=8)
 
-                # 绘制S波 (绿色三角形向下)
-                if len(self.s_waves) > 0:
-                    for v in self.s_waves:
-                        ax1.plot(v, self.signal[v], 'gv', markersize=8, label='S' if v == self.s_waves[0] else "")
-                        if self.filtered_signal is not None:
-                            ax2.plot(v, self.filtered_signal[v], 'gv', markersize=8)
-                        if self.differentiated_signal is not None:
-                            ax3.plot(v, self.differentiated_signal[v], 'gv', markersize=8)
-                        if self.squared_signal is not None:
-                            ax4.plot(v, self.squared_signal[v], 'gv', markersize=8)
-                        if self.integrated_signal is not None:
-                            ax5.plot(v, self.integrated_signal[v], 'gv', markersize=8)
+            # 绘制T波 (青色菱形)
+            if len(self.t_waves) > 0:
+                for v in self.t_waves:
+                    ax1.plot(v, self.signal[v], 'cD', markersize=8, label='T' if v == self.t_waves[0] else "")
+                    if self.filtered_signal is not None:
+                        ax2.plot(v, self.filtered_signal[v], 'cD', markersize=8)
+                    if self.differentiated_signal is not None:
+                        ax3.plot(v, self.differentiated_signal[v], 'cD', markersize=8)
+                    if self.squared_signal is not None:
+                        ax4.plot(v, self.squared_signal[v], 'cD', markersize=8)
+                    if self.integrated_signal is not None:
+                        ax5.plot(v, self.integrated_signal[v], 'cD', markersize=8)
 
-                # 绘制P波 (品红色方块)
-                if len(self.p_waves) > 0:
-                    for v in self.p_waves:
-                        ax1.plot(v, self.signal[v], 'ms', markersize=8, label='P' if v == self.p_waves[0] else "")
-                        if self.filtered_signal is not None:
-                            ax2.plot(v, self.filtered_signal[v], 'ms', markersize=8)
-                        if self.differentiated_signal is not None:
-                            ax3.plot(v, self.differentiated_signal[v], 'ms', markersize=8)
-                        if self.squared_signal is not None:
-                            ax4.plot(v, self.squared_signal[v], 'ms', markersize=8)
-                        if self.integrated_signal is not None:
-                            ax5.plot(v, self.integrated_signal[v], 'ms', markersize=8)
+            # 更新所有子图视图
+            for axis in [ax1, ax2, ax3, ax4, ax5]:
+                axis.relim()
+                axis.autoscale_view()
 
-                # 绘制T波 (青色菱形)
-                if len(self.t_waves) > 0:
-                    for v in self.t_waves:
-                        ax1.plot(v, self.signal[v], 'cD', markersize=8, label='T' if v == self.t_waves[0] else "")
-                        if self.filtered_signal is not None:
-                            ax2.plot(v, self.filtered_signal[v], 'cD', markersize=8)
-                        if self.differentiated_signal is not None:
-                            ax3.plot(v, self.differentiated_signal[v], 'cD', markersize=8)
-                        if self.squared_signal is not None:
-                            ax4.plot(v, self.squared_signal[v], 'cD', markersize=8)
-                        if self.integrated_signal is not None:
-                            ax5.plot(v, self.integrated_signal[v], 'cD', markersize=8)
-
-                # 更新所有子图视图
-                for axis in [ax1, ax2, ax3, ax4, ax5]:
-                    axis.relim()
-                    axis.autoscale_view()
-
-                plt.pause(0.01)
+            plt.pause(0.01)
 
 
 class QingXunBlueToothCollector:
