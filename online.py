@@ -106,13 +106,6 @@ for wave_type, marker_cfg in WAVE_MARKER_CONFIG.items():
         scatter_list.append(scatter)
     scatter_objects[wave_type] = scatter_list
 
-# ----------------------------------------------------------------------------
-# 为了向后兼容，保留原有的变量名
-# ----------------------------------------------------------------------------
-ax1, ax2, ax3, ax4, ax5 = axes
-line1, line2, line3, line4, line5 = lines
-
-
 
 class RealTimeECGDetector:
     """
@@ -680,11 +673,6 @@ class RealTimeECGDetector:
                 # 转换为numpy数组方便计算ylim
                 signal_array = np.array(list(self.signal))
                 
-                # 更新原始信号子图
-                line1.set_ydata(signal_array)
-                line1.set_xdata(range(len(signal_array)))
-                ax1.set_ylim(np.min(signal_array), np.max(signal_array))
-
                 # 准备5个子图的信号数据
                 signals = [
                     signal_array,
@@ -693,11 +681,9 @@ class RealTimeECGDetector:
                     self.squared_signal,
                     self.integrated_signal
                 ]
-                lines = [line1, line2, line3, line4, line5]
-                axes = [ax1, ax2, ax3, ax4, ax5]
 
-                # 批量更新其他信号子图
-                for i in range(1, 5):
+                # 批量更新所有信号子图
+                for i in range(5):
                     if signals[i] is not None:
                         lines[i].set_ydata(signals[i])
                         lines[i].set_xdata(range(len(signals[i])))
@@ -750,8 +736,8 @@ class RealTimeECGDetector:
                         scatter.set_offsets(np.empty((0, 2)))
 
                 # 只对第一个子图更新布局（其他子图共享x轴，会自动更新）
-                ax1.relim()
-                ax1.autoscale_view(scalex=True, scaley=False)
+                axes[0].relim()
+                axes[0].autoscale_view(scalex=True, scaley=False)
 
                 # 使用draw_idle()替代pause()，更高效
                 fig.canvas.draw_idle()
