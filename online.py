@@ -1,4 +1,5 @@
 from collections import deque
+from pickle import FALSE
 import numpy as np
 from scipy import signal as scipy_signal
 import asyncio
@@ -7,6 +8,7 @@ from bleak import BleakClient
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
 import matplotlib.pyplot as plt
+from matplotlib.collections import PolyCollection
 import struct
 from signal_params import get_signal_params
 
@@ -25,14 +27,8 @@ if DEVICE_NAME == "AAA-TEST":
         "rx_uuid": QINGXUN_UART_RX_CHAR_UUID,
         "tx_uuid": QINGXUN_UART_TX_CHAR_UUID,
     }
-elif DEVICE_NAME == "PW-ECG-SL":
-    device_param = {
-        "name": DEVICE_NAME,
-        "address": "E2:1B:A5:DB:DE:EA",
-        "service_uuid": QINGXUN_UART_SERVICE_UUID,
-        "rx_uuid": QINGXUN_UART_RX_CHAR_UUID,
-        "tx_uuid": QINGXUN_UART_TX_CHAR_UUID,
-    }
+
+DEBUG_ENABLE = True
 
 # ============================================================================
 # 初始化matplotlib图形显示系统
@@ -40,7 +36,7 @@ elif DEVICE_NAME == "PW-ECG-SL":
 
 # 开启交互模式，允许图形实时更新而不阻塞程序
 plt.ion()
-
+WINDOW_SHOW_ENABLE = True
 # ----------------------------------------------------------------------------
 # 配置子图信息：每个子图对应Pan-Tomkins算法的一个处理阶段
 # ----------------------------------------------------------------------------
@@ -61,6 +57,16 @@ WAVE_MARKER_CONFIG = {
     's': {'color': 'green', 'marker': 'v', 'label': 'S', 'size': 64, 'desc': 'S Wave - Negative Wave After R Peak'},
     'p': {'color': 'magenta', 'marker': 's', 'label': 'P', 'size': 64, 'desc': 'P Wave - Atrial Depolarization'},
     't': {'color': 'cyan', 'marker': 'D', 'label': 'T', 'size': 64, 'desc': 'T Wave - Ventricular Repolarization'}
+}
+
+# ----------------------------------------------------------------------------
+# 配置搜索窗口样式：用于可视化每个波的搜索范围
+# ----------------------------------------------------------------------------
+SEARCH_WINDOW_CONFIG = {
+    'q': {'color': 'blue', 'alpha': 0.40, 'label': 'Q Search'},
+    's': {'color': 'green', 'alpha': 0.40, 'label': 'S Search'},
+    'p': {'color': 'magenta', 'alpha': 0.40, 'label': 'P Search'},
+    't': {'color': 'cyan', 'alpha': 0.40, 'label': 'T Search'}
 }
 
 # ----------------------------------------------------------------------------
@@ -105,6 +111,23 @@ for wave_type, marker_cfg in WAVE_MARKER_CONFIG.items():
         )
         scatter_list.append(scatter)
     scatter_objects[wave_type] = scatter_list
+
+# ============================================================================
+# 创建搜索窗口可视化对象（只在第一个子图显示）
+# 使用 PolyCollection 来高效绘制多个矩形区域
+# ============================================================================
+search_window_collections = {}
+for wave_type, window_cfg in SEARCH_WINDOW_CONFIG.items():
+    collection = PolyCollection(
+        [],  # 初始为空
+        facecolors=window_cfg['color'],
+        alpha=window_cfg['alpha'],
+        edgecolors='none',
+        zorder=1,  # 在背景层，不遮挡信号线和标记点
+        label=window_cfg['label']
+    )
+    axes[0].add_collection(collection)
+    search_window_collections[wave_type] = collection
 
 
 class RealTimeECGDetector:
@@ -424,15 +447,20 @@ class RealTimeECGDetector:
             # 获取R峰幅值作为参考
             r_amplitude = signal_array[r_peak]
             q_amplitude = signal_array[q_peak_candidate]
-
             # 验证Q波特征:
             # 1. Q波幅值应明显小于R峰（负向偏转）
             # 2. 幅值差应超过最小阈值
             amplitude_diff = r_amplitude - q_amplitude
 
-            if (amplitude_diff > self.q_wave_min_amplitude and
-                q_amplitude < r_amplitude * 0.7):  # Q波应明显低于R峰
+            if (amplitude_diff > self.q_wave_min_amplitude):  # Q波应明显低于R峰
                 q_waves.append(q_peak_candidate)
+                
+            if DEBUG_ENABLE:
+                print('[Q波检测] 搜索窗口: [{}, {}]'.format(search_start, search_end))
+                print('[Q波检测] 幅值差: {:.4f} (阈值: {:.4f}) -> {}'.format(
+                    amplitude_diff, self.q_wave_min_amplitude, 
+                    '✓通过' if amplitude_diff > self.q_wave_min_amplitude else '✗未通过'))
+
 
         return q_waves
 
@@ -457,7 +485,6 @@ class RealTimeECGDetector:
             # 定义S波搜索窗口 (R峰后)
             search_start = min(len(signal_array) - 1, r_peak + self.s_wave_search_start)
             search_end = min(len(signal_array), r_peak + self.s_wave_search_end)
-
             if search_end <= search_start:
                 continue
 
@@ -478,9 +505,14 @@ class RealTimeECGDetector:
             # 2. 幅值差应超过最小阈值
             amplitude_diff = r_amplitude - s_amplitude
 
-            if (amplitude_diff > self.s_wave_min_amplitude and
-                s_amplitude < r_amplitude * 0.7):  # S波应明显低于R峰
+            if (amplitude_diff > self.s_wave_min_amplitude):  # S波应明显低于R峰
                 s_waves.append(s_peak_candidate)
+
+            if DEBUG_ENABLE:
+                print('[S波检测] 搜索窗口: [{}, {}]'.format(search_start, search_end))
+                print('[S波检测] 幅值差: {:.4f} (阈值: {:.4f}) -> {}'.format(
+                    amplitude_diff, self.s_wave_min_amplitude,
+                    '✓通过' if amplitude_diff > self.s_wave_min_amplitude else '✗未通过'))
 
         return s_waves
 
@@ -505,7 +537,6 @@ class RealTimeECGDetector:
             # 定义P波搜索窗口 (R峰前)
             search_start = max(0, r_peak - self.p_wave_search_start)
             search_end = max(0, r_peak - self.p_wave_search_end)
-
             if search_end <= search_start:
                 continue
 
@@ -532,8 +563,14 @@ class RealTimeECGDetector:
             # 验证P波特征:
             # 1. P波幅值应超过最小阈值
             # 2. P波应明显小于R峰
-            if self.p_wave_min_amplitude < p_amplitude_from_baseline < r_amplitude * 0.25:  # P波应远小于R峰
+            if self.p_wave_min_amplitude < p_amplitude_from_baseline < r_amplitude * 0.5:  # P波应远小于R峰
                 p_waves.append(p_peak_candidate)
+
+            if DEBUG_ENABLE:
+                print('[P波检测] 搜索窗口: [{}, {}]'.format(search_start, search_end))
+                print('[P波检测] 范围检查: {:.4f} < {:.4f} < {:.4f} -> {}'.format(
+                    self.p_wave_min_amplitude, p_amplitude_from_baseline, r_amplitude * 0.5,
+                    '✓通过' if self.p_wave_min_amplitude < p_amplitude_from_baseline < r_amplitude * 0.5 else '✗未通过'))
 
         return p_waves
 
@@ -558,7 +595,6 @@ class RealTimeECGDetector:
             # 定义T波搜索窗口 (R峰后)
             search_start = min(len(signal_array) - 1, r_peak + self.t_wave_search_start)
             search_end = min(len(signal_array), r_peak + self.t_wave_search_end)
-
             if search_end <= search_start:
                 continue
 
@@ -585,8 +621,14 @@ class RealTimeECGDetector:
             # 验证T波特征:
             # 1. T波幅值应超过最小阈值
             # 2. T波通常小于R峰但大于P波
-            if self.t_wave_min_amplitude < t_amplitude_from_baseline < r_amplitude * 0.6:  # T波应小于R峰
+            if self.t_wave_min_amplitude < t_amplitude_from_baseline < r_amplitude * 0.5:  # T波应小于R峰
                 t_waves.append(t_peak_candidate)
+
+            if DEBUG_ENABLE:
+                print('[T波检测] 搜索窗口: [{}, {}]'.format(search_start, search_end))
+                print('[T波检测] 范围检查: {:.4f} < {:.4f} < {:.4f} -> {}'.format(
+                    self.t_wave_min_amplitude, t_amplitude_from_baseline, r_amplitude * 0.5,
+                    '✓通过' if self.t_wave_min_amplitude < t_amplitude_from_baseline < r_amplitude * 0.5 else '✗未通过'))
 
         return t_waves
 
@@ -655,20 +697,19 @@ class RealTimeECGDetector:
             samples: 新接收的采样数据列表 (单位: mV)
         """
         sample_show_cnt = 0
+        print(f"samples: {samples}")
         for sample in samples:
             sample_show_cnt += 1
-            # 将新样本添加到deque中，自动淘汰旧数据，若在读取期间有所失常则用上一个数据源补充
-            if len(self.signal) > 500 and sample  < 2.0:
-                sample = self.signal[-1]
+            # 将新样本添加到deque中，自动淘汰旧数据
             self.signal.append(sample)
 
-            if len(self.signal) > 500 and sample_show_cnt % 10 == 0:
+            if len(self.signal) > 500 and sample_show_cnt % 20 == 0:
                 peaks = self.detect_wave()
-                # print(f"R peaks: {peaks}")
-                # print(f"Q waves: {self.q_waves}")
-                # print(f"S waves: {self.s_waves}")
-                # print(f"P waves: {self.p_waves}")
-                # print(f"T waves: {self.t_waves}")
+                print(f"R peaks: {peaks}")
+                print(f"Q waves: {self.q_waves}")
+                print(f"S waves: {self.s_waves}")
+                print(f"P waves: {self.p_waves}")
+                print(f"T waves: {self.t_waves}")
 
                 # 转换为numpy数组方便计算ylim
                 signal_array = np.array(list(self.signal))
@@ -687,9 +728,14 @@ class RealTimeECGDetector:
                     if signals[i] is not None:
                         lines[i].set_ydata(signals[i])
                         lines[i].set_xdata(range(len(signals[i])))
-                        axes[i].set_ylim(np.min(signals[i]), np.max(signals[i]))
+                        # 修复：避免ylim最大最小值相同导致的错误
+                        y_min, y_max = np.min(signals[i]), np.max(signals[i])
+                        if y_min == y_max:
+                            y_min -= 0.1
+                            y_max += 0.1
+                        axes[i].set_ylim(y_min, y_max)
 
-                # 使用高效的scatter对象更新标记点（不需要清除和重新创建）
+                # 使用scatter对象更新标记点
                 # 更新R峰标记
                 if len(peaks) > 0:
                     for i, scatter in enumerate(scatter_objects['r']):
@@ -735,7 +781,81 @@ class RealTimeECGDetector:
                     for scatter in scatter_objects['t']:
                         scatter.set_offsets(np.empty((0, 2)))
 
-                # 只对第一个子图更新布局（其他子图共享x轴，会自动更新）
+                if WINDOW_SHOW_ENABLE:
+                    # ================================================================
+                    # 更新搜索窗口可视化（只在第一个子图显示）
+                    # ================================================================
+                    if len(peaks) > 0 and signals[0] is not None:
+                        y_min_sig, y_max_sig = np.min(signals[0]), np.max(signals[0])
+                        
+                        # Q波搜索窗口（R峰前）
+                        q_windows = []
+                        for r_peak in peaks:
+                            search_start = max(0, r_peak - self.q_wave_search_start)
+                            search_end = max(0, r_peak - self.q_wave_search_end)
+                            # 修复：search_start < search_end 才是正确的条件
+                            if search_start < search_end and search_end < len(signals[0]):
+                                # 创建矩形的四个顶点 (逆时针)
+                                rect = [
+                                    [search_start, y_min_sig],
+                                    [search_end, y_min_sig],
+                                    [search_end, y_max_sig],
+                                    [search_start, y_max_sig]
+                                ]
+                                q_windows.append(rect)
+                        search_window_collections['q'].set_verts(q_windows)
+                        
+                        # S波搜索窗口（R峰后）
+                        s_windows = []
+                        for r_peak in peaks:
+                            search_start = min(len(signals[0]) - 1, r_peak + self.s_wave_search_start)
+                            search_end = min(len(signals[0]), r_peak + self.s_wave_search_end)
+                            if search_start < search_end:
+                                rect = [
+                                    [search_start, y_min_sig],
+                                    [search_end, y_min_sig],
+                                    [search_end, y_max_sig],
+                                    [search_start, y_max_sig]
+                                ]
+                                s_windows.append(rect)
+                        search_window_collections['s'].set_verts(s_windows)
+                        
+                        # P波搜索窗口（R峰前，比Q波更远）
+                        p_windows = []
+                        for r_peak in peaks:
+                            search_start = max(0, r_peak - self.p_wave_search_start)
+                            search_end = max(0, r_peak - self.p_wave_search_end)
+                            # 修复：search_start < search_end 才是正确的条件
+                            if search_start < search_end and search_end < len(signals[0]):
+                                rect = [
+                                    [search_start, y_min_sig],
+                                    [search_end, y_min_sig],
+                                    [search_end, y_max_sig],
+                                    [search_start, y_max_sig]
+                                ]
+                                p_windows.append(rect)
+                        search_window_collections['p'].set_verts(p_windows)
+                        
+                        # T波搜索窗口（R峰后，比S波更远）
+                        t_windows = []
+                        for r_peak in peaks:
+                            search_start = min(len(signals[0]) - 1, r_peak + self.t_wave_search_start)
+                            search_end = min(len(signals[0]), r_peak + self.t_wave_search_end)
+                            if search_start < search_end:
+                                rect = [
+                                    [search_start, y_min_sig],
+                                    [search_end, y_min_sig],
+                                    [search_end, y_max_sig],
+                                    [search_start, y_max_sig]
+                                ]
+                                t_windows.append(rect)
+                        search_window_collections['t'].set_verts(t_windows)
+                    else:
+                        # 如果没有R峰，清空所有搜索窗口
+                        for collection in search_window_collections.values():
+                            collection.set_verts([])
+
+                # 对第一个子图更新布局,其他子图共享x轴，自动更新
                 axes[0].relim()
                 axes[0].autoscale_view(scalex=True, scaley=False)
 
@@ -836,18 +956,18 @@ class BlueToothCollector:
         return respones
 
     def packet_decode(self, data):
-        # 只提取数据内容
+        # 提取心电数据 (偏移: 11-240, 共230字节, 115个采样点)
         samples = []
-        sample_data_start = 4  # 采样数据起始位置
-        for i in range(119):
+        sample_data_start = 11  # 采样数据起始位置
+        for i in range(115):
             sample_offset = sample_data_start + i * 2
-            if sample_offset + 2 > len(data) - 2:  # 减去校验和
+            if sample_offset + 2 > len(data) - 3:  # 减去预留位(1) + CRC16(2)
                 break
 
             # 读取小端格式的16位整数
             sample_value = struct.unpack('<H', data[sample_offset:sample_offset + 2])[0]
 
-            # 转换为电压值 (μV) - 单导联 0.288 12导联 0.318
+            # 转换为电压值 (mV) - 单导联 0.288 12导联 0.318
             voltage_mV = sample_value * 0.288 / 1000.0
             samples.append(voltage_mV)
 
@@ -855,7 +975,7 @@ class BlueToothCollector:
 
     def handle_rx(self, sender, data): # 接收数据回调函数
         data_samples = self.packet_decode(data)
-        data_samples = data_samples[3:-2]
+        # print(data_samples)
 
         # 将数据传递给QRS检测器
         if len(data_samples) > 0:

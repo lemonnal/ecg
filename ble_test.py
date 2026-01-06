@@ -22,7 +22,7 @@ TEST_SCAN_DEVICES = 0          # 测试1: 简单扫描蓝牙设备
 TEST_CONNECT_AND_VIEW = 0      # 测试2: 连接设备并查看服务
 TEST_DATA_PARSE = 0            # 测试3: 数据解析测试
 TEST_ECG_COLLECTION = 0        # 测试4: ECG数据采集与实时绘图(简单版)
-TEST_QINGXUN_COLLECTOR = 0     # 测试5: QingXunBlueToothCollector类完整测试
+TEST_QINGXUN_COLLECTOR = 1     # 测试5: QingXunBlueToothCollector类完整测试
 
 
 # ============================================
@@ -65,69 +65,6 @@ if TEST_CONNECT_AND_VIEW:
             print(f"连接或读取失败: {e}")
 
     # asyncio.run(main("E2:1B:A5:DB:DE:EA"))  # 需要指定设备地址
-
-
-# ============================================
-# 测试3: 数据解析测试
-# ============================================
-if TEST_DATA_PARSE:
-    # 包含全部解包结构，不一定使用
-    # 解析协议包结构: 功能码(2) + 数据长度(2) + 数据内容(238) + CRC16(2) = 244字节
-    # 1. 提取功能码 (2)
-    feature_code = data[0:2]
-
-    # 2. 提取数据长度 (2)
-    data_len = struct.unpack('<H', data[2:4])[0]
-
-    # 3. 提取数据内容
-    samples = []
-    sample_data_start = 4  # 采样数据起始位置
-    for i in range(119):
-        sample_offset = sample_data_start + i * 2
-        if sample_offset + 2 > len(data) - 2:  # 减去校验和
-            break
-
-        # 读取小端格式的16位整数
-        sample_value = struct.unpack('<H', data[sample_offset:sample_offset + 2])[0]
-
-        # 转换为电压值 (μV) - 单导联 0.288 12导联 0.318
-        voltage_uV = sample_value * 0.288
-        samples.append({
-            'raw_adc': sample_value,
-            'voltage_uV': voltage_uV,
-            'voltage_mV': voltage_uV / 1000.0
-        })
-    # CRC校验和 (最后2字节)
-    crc_checksum = struct.unpack('<H', data[-2:])[0]
-
-    parsed_data = {
-        'feature_code': feature_code.hex(),
-        'data_len': data_len,
-        'samples': samples,
-        'sample_count': len(samples),
-        'crc_checksum': f'{crc_checksum:04x}',
-    }
-    for key, value in parsed_data.items():
-        print(f"{key}: {value}")
-    hex_str = ' '.join(f'{b:02x}' for b in data)
-    print(f"十六进制: {hex_str} (共{len(data)}字节)")
-
-    # 假设 samples 是一个字典列表
-    voltage_mV_max = max([sample.get('voltage_mV') for sample in samples if 'voltage_mV' in sample])
-    voltage_mV_min = min([sample.get('voltage_mV') for sample in samples if 'voltage_mV' in sample])
-
-    try:
-        for sample in samples:
-            value = sample['voltage_mV']
-            data_list.append(value)
-            line.set_ydata(data_list)
-            line.set_xdata(range(len(data_list)))
-            ax.set_ylim(voltage_mV_min - 0.1 * abs(voltage_mV_min), voltage_mV_max + 0.1 * abs(voltage_mV_max))
-            ax.relim()
-            ax.autoscale_view()
-            # plt.pause(0.01)  # 更新图形，可以根据需要调整刷新频率
-    except ValueError:
-        pass
 
 
 # ============================================
@@ -337,27 +274,9 @@ if TEST_QINGXUN_COLLECTOR:
             "rx_uuid": QINGXUN_UART_RX_CHAR_UUID,
             "tx_uuid": QINGXUN_UART_TX_CHAR_UUID,
         }
-    elif device == "PW-ECG-SL":
-        device_param = {
-            "name": device,
-            "address": "E2:1B:A5:DB:DE:EA",
-            "service_uuid": QINGXUN_UART_SERVICE_UUID,
-            "rx_uuid": QINGXUN_UART_RX_CHAR_UUID,
-            "tx_uuid": QINGXUN_UART_TX_CHAR_UUID,
-        }
-
-
-    voltage_mV_max = -0xffffff
-    voltage_mV_min = 0xffffff
 
     # 创建空的数据列表
     data_list = deque(maxlen=300)  # 保持最新的100个数据点
-    # 创建一个图形窗口
-    plt.ion()  # 开启交互模式
-    fig, ax = plt.subplots()
-    line, = ax.plot([])
-    ax.set_ylim(0.0, 0.05)  # 设置y轴范围，根据你的数据范围进行调整
-
 
     class QingXunBlueToothCollector:
         def __init__(self, client=None):
@@ -462,45 +381,93 @@ if TEST_QINGXUN_COLLECTOR:
 
         # 接收数据回调函数
         def handle_rx(self, sender, data):
-            global voltage_mV_max
-            global voltage_mV_min
 
-            # 只提取数据内容
+            # hex_str = ' '.join(f'{b:02x}' for b in data)
+            # print(f"十六进制: {hex_str} (共{len(data)}字节)")
+
+            # ================================================================
+            # 解析协议包结构 (总共244字节):
+            # ================================================================
+            # 字节位置    | 字段名称           | 字节数 | 说明
+            # ---------------------------------------------------------------
+            # 0-1        | 功能码             | 2      | 0x8000
+            # 2-3        | 数据包长度         | 2      | 0x00EE (238字节)
+            # 4-5        | 序列号             | 2      | 0x0000～0xFFFF
+            # 6-7        | 设备类型           | 2      | 0x4401 单导联, 0x4402 12导联
+            # 8-9        | 数据部分长度       | 2      | 0x00E8 (232字节) 心电数据长度, 设备类型2字节+115个采样点(每个2字节)
+            # 10         | 导联脱落情况       | 1      | 0x90 正常
+            # 11-240     | 心电数据           | 230    | 115个采样点 (每个2字节)
+            # 241        | 预留位             | 1      | 预留
+            # 242-243    | CRC16校验          | 2      | 0x0000～0xFFFF
+            # 共 244 字节
+            # ================================================================
+            
+            # 1. 提取功能码 (偏移: 0-1)
+            feature_code = struct.unpack('<H', data[0:2])[0]
+            
+            # 2. 提取数据包长度 (偏移: 2-3)
+            pack_len = struct.unpack('<H', data[2:4])[0]
+            
+            # 3. 提取序列号 (偏移: 4-5)
+            sn_code = struct.unpack('<H', data[4:6])[0]
+            
+            # 4. 提取设备类型 (偏移: 6-7)
+            device_type = struct.unpack('<H', data[6:8])[0]
+            
+            # 5. 提取数据部分长度 (偏移: 8-9)
+            data_len = struct.unpack('<H', data[8:10])[0]
+            
+            # 6. 提取导联脱落情况 (偏移: 10)
+            lead_off = struct.unpack('B', data[10:11])[0]
+            
+            # 7. 提取心电数据 (偏移: 11-240, 共230字节, 115个采样点)
             samples = []
-            sample_data_start = 4  # 采样数据起始位置
-            for i in range(119):
+            sample_data_start = 11  # 采样数据起始位置
+            for i in range(115):
                 sample_offset = sample_data_start + i * 2
-                if sample_offset + 2 > len(data) - 2:  # 减去校验和
+                if sample_offset + 2 > len(data) - 3:  # 减去预留位(1) + CRC16(2)
                     break
 
                 # 读取小端格式的16位整数
                 sample_value = struct.unpack('<H', data[sample_offset:sample_offset + 2])[0]
 
-                # 转换为电压值 (μV) - 单导联 0.288 12导联 0.318
-                voltage_mV = sample_value * 0.288 / 1000.0
-                samples.append(voltage_mV)
+                # 转换为电压值 (μV) - 单导联 0.288, 12导联 0.318
+                voltage_uV = sample_value * 0.288
+                samples.append({
+                    'raw_adc': sample_value,
+                    'voltage_uV': voltage_uV,
+                    'voltage_mV': voltage_uV / 1000.0
+                })
+            
+            # 8. 提取预留位 (偏移: 241)
+            reserved = struct.unpack('B', data[241:242])[0]
 
-            # 将数据传递给QRS检测器
-            if self.qrs_detector and len(samples) > 0:
-                self.qrs_detector.update_signal(samples)
+            # 9. 提取CRC16校验和 (偏移: 242-243)
+            crc_checksum = struct.unpack('<H', data[242:244])[0]
 
-            try:
-                voltage_mV_max = max(samples) if voltage_mV_max < max(samples) else voltage_mV_max
-                voltage_mV_min = min(samples) if voltage_mV_min > min(samples) else voltage_mV_min
-                # print(voltage_mV_max, voltage_mV_min)
-                voltage_delta = voltage_mV_max - voltage_mV_min
+            # 构建解析结果字典
+            parsed_data = {
+                'feature_code': f'0x{feature_code:04X}',
+                'pack_len': pack_len,
+                'sn_code': sn_code,
+                'device_type': f'0x{device_type:04X}' + (' (单导联)' if device_type == 0x4401 else ' (12导联)' if device_type == 0x4402 else ''),
+                'data_len': data_len,
+                'lead_off': f'0x{lead_off:02X}' + (' (正常)' if lead_off == 0x90 else ' (脱落)'),
+                'samples': samples,
+                'sample_count': len(samples),
+                'reserved': f'0x{reserved:02X}',
+                'crc_checksum': f'0x{crc_checksum:04X}',
+            }
+            
+            # 打印解析结果
+            print("=" * 60)
+            print("协议包解析结果:")
+            print("-" * 60)
+            for key, value in parsed_data.items():
+                print(f"{key:20s}: {value}")
+            print(f"心电数据采样点数: {len(samples)}")
+            print("=" * 60)
 
-                for sample in samples:
-                    value = sample
-                    data_list.append(value)
-                    line.set_ydata(data_list)
-                    line.set_xdata(range(len(data_list)))
-                    ax.set_ylim(voltage_mV_min - 0.2 * voltage_delta, voltage_mV_max + 0.2 * voltage_delta)
-                    ax.relim()
-                    ax.autoscale_view()
-                    plt.pause(0.01)  # 更新图形，可以根据需要调整刷新频率
-            except ValueError:
-                pass
 
 
 
@@ -509,7 +476,7 @@ if TEST_QINGXUN_COLLECTOR:
     async def main():
         # 首先扫描并输出所有附近的蓝牙设备
         print("正在扫描所有附近的蓝牙设备...")
-        all_devices = await BleakScanner.discover(timeout=10.0)
+        all_devices = await BleakScanner.discover(timeout=1.0)
         print(f"\n找到 {len(all_devices)} 个蓝牙设备:\n")
 
         for d in all_devices:
