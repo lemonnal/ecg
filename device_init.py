@@ -1,0 +1,14 @@
+QINGXUN_UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-68716563686f"
+QINGXUN_UART_RX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-68716563686f"
+QINGXUN_UART_TX_CHAR_UUID = "6e400003-b5a3-f393-e0a9-68716563686f"
+
+# 设备配置 - 当前选择的设备
+DEVICE_NAME = "AAA-TEST"
+if DEVICE_NAME == "AAA-TEST":
+    device_param = {
+        "name": DEVICE_NAME,
+        "address": "EC:7A:26:9D:81:3F",
+        "service_uuid": QINGXUN_UART_SERVICE_UUID,
+        "rx_uuid": QINGXUN_UART_RX_CHAR_UUID,
+        "tx_uuid": QINGXUN_UART_TX_CHAR_UUID,
+    }
