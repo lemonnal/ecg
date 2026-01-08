@@ -1,197 +1,197 @@
-# ECG 心电图信号处理与 QRS 波检测
+# ECG Signal Processing and QRS Wave Detection
 
-本工作空间专注于心电图（ECG）信号处理算法的研究与实现，核心是基于改进的 Pan-Tomkins 算法的实时 ECG 波形检测系统，同时包含深度学习方法和传统算法的探索性研究。
-
----
-
-## 目录
-
-- [项目概述](#项目概述)
-- [项目结构](#项目结构)
-- [快速开始](#快速开始)
-  - [环境配置](#环境配置)
-  - [在线实时检测](#在线实时检测)
-  - [离线文件检测](#离线文件检测)
-  - [蓝牙测试工具](#蓝牙测试工具)
-- [核心模块详解](#核心模块详解)
-  - [参数配置系统](#参数配置系统)
-  - [在线检测器](#在线检测器)
-  - [离线检测器](#离线检测器)
-- [算法原理](#算法原理)
-  - [Pan-Tomkins 算法详解](#pan-tomkins-算法详解)
-  - [关键参数优化](#关键参数优化)
-  - [完整 PQRST 波检测](#完整-pqrst-波检测)
-  - [其他算法](#其他算法)
-- [硬件与协议](#硬件与协议)
-  - [支持的设备](#支持的设备)
-  - [设备配置指南](#设备配置指南)
-- [辅助模块](#辅助模块)
-  - [qrs_detector 参考实现](#qrs_detector-参考实现)
-  - [tradition 传统算法集合](#tradition-传统算法集合)
-  - [ecg_deepl_method 深度学习方法](#ecg_deepl_method-深度学习方法)
-  - [Information 技术文档](#information-技术文档)
-- [标准与测试](#标准与测试)
-  - [YY 9706.247-2021 标准](#yy-9706247-2021-标准)
-  - [MIT-BIH 数据库](#mit-bih-数据库)
-- [技术栈](#技术栈)
-- [常见问题](#常见问题)
-- [参考资料](#参考资料)
-- [开发计划](#开发计划)
+This workspace focuses on the research and implementation of ECG signal processing algorithms. The core is a real-time ECG waveform detection system based on an improved Pan-Tomkins algorithm, along with exploratory research on deep learning methods and traditional algorithms.
 
 ---
 
-## 项目概述
+## Table of Contents
 
-本项目是一个完整的 ECG 信号处理解决方案，主要特点：
-
-### 核心功能
-
-- **实时检测**：支持通过蓝牙低功耗（BLE）设备进行实时心电信号采集与 PQRST 波检测
-- **离线分析**：支持 MIT-BIH 等标准数据库的离线分析
-- **多算法对比**：包含传统算法（Pan-Tomkins、希尔伯特变换）和深度学习方法
-- **可视化展示**：实时显示信号处理的各个阶段，5 个子图同步显示
-- **导联自适应**：针对不同 ECG 导联（MLII, V1-V6, I, II, III, aVR, aVL, aVF）优化参数
-- **完整波形检测**：支持 P、Q、R、S、T 五种特征波的检测
-- **参数配置分离**：统一的 JSON 参数配置文件，便于调优和维护
-
-### 核心技术
-
-- **Pan-Tomkins 算法**：经典的 QRS 波检测算法
-- **自适应带通滤波**：根据不同导联特性调整滤波参数（1-50 Hz 可调）
-- **滑动窗口阈值检测**：使用指数移动平均（EMA）平滑阈值适应信号变化
-- **相位延迟补偿**：补偿滤波和积分引入的相位延迟
-- **异步蓝牙通信**：基于 `asyncio` 和 `bleak` 实现高效蓝牙数据采集
-- **参数配置系统**：JSON 配置文件统一管理在线/离线模式的所有导联参数
-
-### 应用场景
-
-- 动态心电图（Holter）系统开发
-- 心律失常检测算法研究
-- ECG 信号质量评估
-- 实时心率监测设备
-- 医疗器械合规性测试
+- [Project Overview](#project-overview)
+- [Project Structure](#project-structure)
+- [Quick Start](#quick-start)
+  - [Environment Setup](#environment-setup)
+  - [Online Real-time Detection](#online-real-time-detection)
+  - [Offline File Detection](#offline-file-detection)
+  - [Bluetooth Test Tool](#bluetooth-test-tool)
+- [Core Module Details](#core-module-details)
+  - [Parameter Configuration System](#parameter-configuration-system)
+  - [Online Detector](#online-detector)
+  - [Offline Detector](#offline-detector)
+- [Algorithm Principles](#algorithm-principles)
+  - [Pan-Tomkins Algorithm Details](#pan-tomkins-algorithm-details)
+  - [Key Parameter Optimization](#key-parameter-optimization)
+  - [Complete PQRST Wave Detection](#complete-pqrst-wave-detection)
+  - [Other Algorithms](#other-algorithms)
+- [Hardware and Protocols](#hardware-and-protocols)
+  - [Supported Devices](#supported-devices)
+  - [Device Configuration Guide](#device-configuration-guide)
+- [Auxiliary Modules](#auxiliary-modules)
+  - [qrs_detector Reference Implementation](#qrs_detector-reference-implementation)
+  - [tradition Traditional Algorithm Collection](#tradition-traditional-algorithm-collection)
+  - [ecg_deepl_method Deep Learning Methods](#ecg_deepl_method-deep-learning-methods)
+  - [Information Technical Documentation](#information-technical-documentation)
+- [Standards and Testing](#standards-and-testing)
+  - [YY 9706.247-2021 Standard](#yy-9706247-2021-standard)
+  - [MIT-BIH Database](#mit-bih-database)
+- [Tech Stack](#tech-stack)
+- [FAQ](#faq)
+- [References](#references)
+- [Development Plan](#development-plan)
 
 ---
 
-## 项目结构
+## Project Overview
+
+This project is a complete ECG signal processing solution with the following main features:
+
+### Core Features
+
+- **Real-time Detection**: Supports real-time ECG signal acquisition and PQRST wave detection via Bluetooth Low Energy (BLE) devices
+- **Offline Analysis**: Supports offline analysis of standard databases like MIT-BIH
+- **Multi-algorithm Comparison**: Includes traditional algorithms (Pan-Tomkins, Hilbert transform) and deep learning methods
+- **Visualization Display**: Real-time display of each stage of signal processing with 5 synchronized subplots
+- **Lead Adaptive**: Optimized parameters for different ECG leads (MLII, V1-V6, I, II, III, aVR, aVL, aVF)
+- **Complete Waveform Detection**: Supports detection of P, Q, R, S, T five characteristic waves
+- **Parameter Configuration Separation**: Unified JSON parameter configuration file for easy tuning and maintenance
+
+### Core Technologies
+
+- **Pan-Tomkins Algorithm**: Classic QRS wave detection algorithm
+- **Adaptive Bandpass Filtering**: Adjust filter parameters based on different lead characteristics (1-50 Hz adjustable)
+- **Sliding Window Threshold Detection**: Uses Exponential Moving Average (EMA) smoothed threshold to adapt to signal changes
+- **Phase Delay Compensation**: Compensates for phase delay introduced by filtering and integration
+- **Asynchronous Bluetooth Communication**: Efficient Bluetooth data acquisition based on `asyncio` and `bleak`
+- **Parameter Configuration System**: JSON configuration file for unified management of all lead parameters in online/offline modes
+
+### Application Scenarios
+
+- Dynamic ECG (Holter) system development
+- Arrhythmia detection algorithm research
+- ECG signal quality assessment
+- Real-time heart rate monitoring devices
+- Medical device compliance testing
+
+---
+
+## Project Structure
 
 ```
 workspace-ecg/
-│
-├── online.py                    # ★ 在线实时检测（蓝牙采集 + PQRST 波检测）
-├── offline.py                   # ★ 离线文件检测（MIT-BIH 数据库）
-├── signal_params.json           # ★ 导联参数配置文件（JSON 格式）
-├── signal_params.py             # ★ 参数加载与管理模块
-├── ble_test.py                  # ★ 蓝牙功能测试工具
-├── unit_test.py                 # ★ 单元测试脚本
-│
-├── qrs_detector/                # QRS 检测器参考实现
-│   ├── QRSDetectorOffline.py    #    离线检测器
-│   ├── QRSDetectorOnline.py     #    在线检测器
-│   └── README.md                #    模块说明文档
-│
-├── tradition/                   # 传统 ECG 算法集合
-│   ├── pan_tomkins_qrs.py       #    Pan-Tomkins 算法完整实现
-│   ├── pan_tomkins_qrs_single.py #    单导联版本
-│   ├── hilbert_qrs.py           #    希尔伯特变换算法
-│   ├── comprehensive_ecg_detector.py  #    综合 ECG 特征点检测（P-QRS-T）
-│   ├── ecg_full_analysis.py     #    完整 ECG 分析系统
-│   ├── Filter.py                #    滤波器工具
-│   ├── kalman.py                #    卡尔曼滤波
-│   ├── ArrhythmiaFilter.py      #    心律失常过滤
-│   ├── iir.py                   #    IIR 滤波器实验
-│   ├── fir.py                   #    FIR 滤波器实验
-│   ├── transform_ecg.py         #    ECG 信号变换
-│   └── *.md                     #    算法分析文档
-│
-├── ecg_deepl_method/            # 深度学习方法
-│   ├── ecg_cnn_1/               #    CNN 实现
-│   ├── ecg-experiment-1/        #    实验 1
-│   ├── ecg-master/              #    主实验代码
-│   ├── Dataset_Study/           #    数据集研究
-│   ├── show_data.py             #    数据可视化
-│   └── count_records.py         #    记录统计
-│
-├── Information/                 # 技术文档与资料
-│   ├── MIT-BIH.md               #    MIT-BIH 数据库说明
-│   ├── MIT-BIH数据库.md         #    数据库详细说明
-│   ├── ECG learn.md             #    ECG 学习笔记
-│   ├── documents.md             #    QRS 检测标准
-│   ├── connect.md               #    12 导联电极配置
-│   └── *.pdf                    #    技术论文和标准文档
-│
-├── .gitignore                   # Git 忽略规则配置
-│
-└── README.md                    # 本文件
+|
+├── online.py                    # ★ Online real-time detection (Bluetooth acquisition + PQRST wave detection)
+├── offline.py                   # ★ Offline file detection (MIT-BIH database)
+├── signal_params.json           # ★ Lead parameter configuration file (JSON format)
+├── signal_params.py             # ★ Parameter loading and management module
+├── ble_test.py                  # ★ Bluetooth function testing tool
+├── unit_test.py                 # ★ Unit testing script
+|
+├── qrs_detector/                # QRS detector reference implementation
+│   ├── QRSDetectorOffline.py    #    Offline detector
+│   ├── QRSDetectorOnline.py     #    Online detector
+│   └── README.md                #    Module documentation
+|
+├── tradition/                   # Traditional ECG algorithm collection
+│   ├── pan_tomkins_qrs.py       #    Complete Pan-Tomkins algorithm implementation
+│   ├── pan_tomkins_qrs_single.py #    Single-lead version
+│   ├── hilbert_qrs.py           #    Hilbert transform algorithm
+│   ├── comprehensive_ecg_detector.py  #    Comprehensive ECG feature point detection (P-QRS-T)
+│   ├── ecg_full_analysis.py     #    Complete ECG analysis system
+│   ├── Filter.py                #    Filter tools
+│   ├── kalman.py                #    Kalman filtering
+│   ├── ArrhythmiaFilter.py      #    Arrhythmia filtering
+│   ├── iir.py                   #    IIR filter experiments
+│   ├── fir.py                   #    FIR filter experiments
+│   ├── transform_ecg.py         #    ECG signal transformation
+│   └── *.md                     #    Algorithm analysis documents
+|
+├── ecg_deepl_method/            # Deep learning methods
+│   ├── ecg_cnn_1/               #    CNN implementation
+│   ├── ecg-experiment-1/        #    Experiment 1
+│   ├── ecg-master/              #    Main experiment code
+│   ├── Dataset_Study/           #    Dataset research
+│   ├── show_data.py             #    Data visualization
+│   └── count_records.py         #    Record statistics
+|
+├── Information/                 # Technical documentation and materials
+│   ├── MIT-BIH.md               #    MIT-BIH database description
+│   ├── MIT-BIH数据库.md         #    Database detailed description
+│   ├── ECG learn.md             #    ECG learning notes
+│   ├── documents.md             #    QRS detection standards
+│   ├── connect.md               #    12-lead electrode configuration
+│   └── *.pdf                    #    Technical papers and standard documents
+|
+├── .gitignore                   # Git ignore rules configuration
+|
+└── README.md                    # This file
 ```
 
-### 文件说明
+### File Description
 
-| 文件 | 说明 |
+| File | Description |
 |:-----|:-----|
-| [online.py](online.py) | 在线实时检测主程序，包含 `RealTimeECGDetector` 类和 `BlueToothCollector` 类 |
-| [offline.py](offline.py) | 离线文件检测程序，包含 `PanTomkinsQRSDetectorOffline` 类 |
-| [signal_params.json](signal_params.json) | 导联参数配置文件，定义 online/offline 模式的所有导联参数 |
-| [signal_params.py](signal_params.py) | 参数加载模块，提供 `get_signal_params()` 统一接口 |
-| [ble_test.py](ble_test.py) | 蓝牙功能测试工具，支持设备扫描、连接测试、数据解析等 |
-| [unit_test.py](unit_test.py) | 单元测试脚本 |
+| [online.py](online.py) | Online real-time detection main program, contains `RealTimeECGDetector` class and `BlueToothCollector` class |
+| [offline.py](offline.py) | Offline file detection program, contains `PanTomkinsQRSDetectorOffline` class |
+| [signal_params.json](signal_params.json) | Lead parameter configuration file, defines all lead parameters for online/offline modes |
+| [signal_params.py](signal_params.py) | Parameter loading module, provides `get_signal_params()` unified interface |
+| [ble_test.py](ble_test.py) | Bluetooth function testing tool, supports device scanning, connection testing, data parsing, etc. |
+| [unit_test.py](unit_test.py) | Unit testing script |
 
 ---
 
-## 快速开始
+## Quick Start
 
-### 环境配置
+### Environment Setup
 
-#### 硬件要求
+#### Hardware Requirements
 
-- **蓝牙设备**：支持 BLE 的 ECG 采集设备
-- **操作系统**：Linux / macOS / Windows
-- **蓝牙适配器**：支持 BLE 4.0+
+- **Bluetooth Device**: BLE-enabled ECG acquisition device
+- **Operating System**: Linux / macOS / Windows
+- **Bluetooth Adapter**: BLE 4.0+ support
 
-#### 软件要求
+#### Software Requirements
 
-- **Python**：3.8+
-- **依赖库**：见下方安装说明
+- **Python**: 3.8+
+- **Dependencies**: See installation instructions below
 
-#### 安装依赖
+#### Install Dependencies
 
 ```bash
 pip install numpy scipy matplotlib wfdb asyncio bleak jupyter
 ```
 
-或使用 requirements.txt（如果存在）：
+Or use requirements.txt (if available):
 
 ```bash
 pip install -r requirements.txt
 ```
 
-#### 验证安装
+#### Verify Installation
 
 ```bash
-# 运行在线检测需要蓝牙设备
+# Running online detection requires Bluetooth device
 python online.py
 ```
 
 ---
 
-### 在线实时检测
+### Online Real-time Detection
 
-#### 基本用法
+#### Basic Usage
 
 ```bash
 python online.py
 ```
 
-#### 功能说明
+#### Function Description
 
-1. **自动扫描设备**：程序启动后会自动扫描附近的蓝牙设备
-2. **连接目标设备**：根据配置自动匹配并连接目标 ECG 设备
-3. **实时数据采集**：接收蓝牙传输的 ECG 信号数据
-4. **实时检测与显示**：在 5 个子图中实时显示处理过程
+1. **Automatic Device Scanning**: The program automatically scans for nearby Bluetooth devices on startup
+2. **Connect to Target Device**: Automatically matches and connects to the target ECG device based on configuration
+3. **Real-time Data Acquisition**: Receives ECG signal data transmitted via Bluetooth
+4. **Real-time Detection and Display**: Displays the processing process in 5 subplots in real-time
 
-#### 配置设备
+#### Configure Device
 
-在 [online.py](online.py) 中修改设备参数：
+Modify device parameters in [online.py](online.py):
 
 ```python
 DEVICE_NAME = "YOUR_DEVICE_NAME"
@@ -199,103 +199,103 @@ DEVICE_NAME = "YOUR_DEVICE_NAME"
 if DEVICE_NAME == "YOUR_DEVICE_NAME":
     device_param = {
         "name": DEVICE_NAME,
-        "address": "XX:XX:XX:XX:XX:XX",  # 替换为实际 MAC 地址
+        "address": "XX:XX:XX:XX:XX:XX",  # Replace with actual MAC address
         "service_uuid": "YOUR_SERVICE_UUID",
         "rx_uuid": "YOUR_RX_UUID",
         "tx_uuid": "YOUR_TX_UUID",
     }
 ```
 
-#### 更换导联类型
+#### Change Lead Type
 
-修改蓝牙采集器类的初始化参数：
+Modify the initialization parameters of the Bluetooth collector class:
 
 ```python
-self.qrs_detector = RealTimeECGDetector(signal_name="MLII")  # 可改为 V1, V2, I 等
+self.qrs_detector = RealTimeECGDetector(signal_name="MLII")  # Can be changed to V1, V2, I, etc.
 ```
 
-支持的导联类型：
-- 肢体导联：I, MLII, MLIII, aVR, aVL, aVF
-- 胸导联：V1, V2, V3, V4, V5, V6
+Supported lead types:
+- Limb leads: I, MLII, MLIII, aVR, aVL, aVF
+- Precordial leads: V1, V2, V3, V4, V5, V6
 
 ---
 
-### 离线文件检测
+### Offline File Detection
 
-#### 基本用法
+#### Basic Usage
 
 ```bash
 python offline.py
 ```
 
-#### 配置数据集路径
+#### Configure Dataset Path
 
-在 [offline.py](offline.py) 中修改：
+Modify in [offline.py](offline.py):
 
 ```python
-root = "YOUR_DATABASE_PATH"  # 替换为 MIT-BIH 数据库实际路径
+root = "YOUR_DATABASE_PATH"  # Replace with actual MIT-BIH database path
 ```
 
-#### 选择检测记录
+#### Select Detection Records
 
 ```python
-numberSet = ['100', '101', '103', '105', '106', ...]  # 要处理的记录编号
+numberSet = ['100', '101', '103', '105', '106', ...]  # Record numbers to process
 ```
 
-#### 选择目标导联
+#### Select Target Lead
 
 ```python
-target_lead = "MLII"  # 可修改为其他导联
+target_lead = "MLII"  # Can be changed to other leads
 ```
 
 ---
 
-### 蓝牙测试工具
+### Bluetooth Test Tool
 
-[ble_test.py](ble_test.py) 提供了完整的蓝牙功能测试工具，支持多种测试模式：
+[ble_test.py](ble_test.py) provides a complete Bluetooth function testing tool with multiple test modes:
 
-#### 测试功能
+#### Test Functions
 
-通过设置文件顶部的标志位启用不同测试：
+Enable different tests by setting flags at the top of the file:
 
 ```python
-# 测试功能标志位设置
-TEST_SCAN_DEVICES = 0          # 测试1: 简单扫描蓝牙设备
-TEST_CONNECT_AND_VIEW = 0      # 测试2: 连接设备并查看服务
-TEST_DATA_PARSE = 0            # 测试3: 数据解析测试
-TEST_ECG_COLLECTION = 0        # 测试4: ECG数据采集与实时绘图(简单版)
-TEST_QINGXUN_COLLECTOR = 0     # 测试5: QingXunBlueToothCollector类完整测试
+# Test function flag settings
+TEST_SCAN_DEVICES = 0          # Test 1: Simple Bluetooth device scan
+TEST_CONNECT_AND_VIEW = 0      # Test 2: Connect to device and view services
+TEST_DATA_PARSE = 0            # Test 3: Data parsing test
+TEST_ECG_COLLECTION = 0        # Test 4: ECG data acquisition and real-time plotting (simple version)
+TEST_QINGXUN_COLLECTOR = 0     # Test 5: QingXunBlueToothCollector class complete test
 ```
 
-#### 使用方法
+#### Usage
 
-1. 将对应的测试标志位设为 `1`
-2. 运行脚本：
+1. Set the corresponding test flag to `1`
+2. Run the script:
 
 ```bash
 python ble_test.py
 ```
 
-#### 主要用途
+#### Main Uses
 
-- 蓝牙设备扫描与发现
-- MAC 地址获取
-- 设备连接测试
-- 服务与特征值查看
-- 数据包解析测试
-- ECG 数据采集验证
+- Bluetooth device scanning and discovery
+- MAC address acquisition
+- Device connection testing
+- Service and characteristic viewing
+- Data packet parsing testing
+- ECG data acquisition verification
 
 ---
 
-## 核心模块详解
+## Core Module Details
 
-### 参数配置系统
+### Parameter Configuration System
 
-项目采用统一的参数配置系统，将所有导联参数集中管理。
+The project adopts a unified parameter configuration system that centrally manages all lead parameters.
 
 #### signal_params.json
 
-JSON 格式的参数配置文件，定义了 online 和 offline 两种模式下各导联的参数：
+A JSON format parameter configuration file that defines parameters for each lead in online and offline modes:
 
 ```json
 {
@@ -320,144 +320,144 @@ JSON 格式的参数配置文件，定义了 online 和 offline 两种模式下�
 
 #### signal_params.py
 
-参数加载模块，提供统一的参数获取接口：
+Parameter loading module providing a unified parameter retrieval interface:
 
 ```python
 from signal_params import get_signal_params
 
-# 获取 online 模式下 MLII 导联的参数
+# Get parameters for MLII lead in online mode
 params = get_signal_params('online', 'MLII')
 
-# 获取 offline 模式下 V1 导联的参数
+# Get parameters for V1 lead in offline mode
 params = get_signal_params('offline', 'V1')
 ```
 
-#### 参数说明
+#### Parameter Description
 
-| 参数 | 说明 | 适用模式 |
+| Parameter | Description | Applicable Modes |
 |:-----|:-----|:---------|
-| `low` | 带通滤波低频截止频率 (Hz) | online / offline |
-| `high` | 带通滤波高频截止频率 (Hz) | online / offline |
-| `filter_order` | Butterworth 滤波器阶数 | online / offline |
-| `original_weight` | 原始信号权重 | online / offline |
-| `filtered_weight` | 滤波信号权重 | online / offline |
-| `integration_window_size` | 积分窗口大小 (秒) | online / offline |
-| `refractory_period` | QRS 检测不应期 (秒) | online / offline |
-| `threshold_factor` | 阈值系数 | online / offline |
-| `compensation_ms` | 相位延迟补偿时间 (毫秒) | online |
-| `ema_alpha` | EMA 阈值平滑系数 | online |
-| `q_wave_*` | Q 波检测参数 | online |
-| `s_wave_*` | S 波检测参数 | online |
-| `p_wave_*` | P 波检测参数 | online |
-| `t_wave_*` | T 波检测参数 | online |
-| `detection_window_size` | 检测窗口大小 (秒) | offline |
-| `overlap_window_size` | 重叠窗口大小 (秒) | offline |
+| `low` | Bandpass filter low cutoff frequency (Hz) | online / offline |
+| `high` | Bandpass filter high cutoff frequency (Hz) | online / offline |
+| `filter_order` | Butterworth filter order | online / offline |
+| `original_weight` | Original signal weight | online / offline |
+| `filtered_weight` | Filtered signal weight | online / offline |
+| `integration_window_size` | Integration window size (seconds) | online / offline |
+| `refractory_period` | QRS detection refractory period (seconds) | online / offline |
+| `threshold_factor` | Threshold coefficient | online / offline |
+| `compensation_ms` | Phase delay compensation time (milliseconds) | online |
+| `ema_alpha` | EMA threshold smoothing coefficient | online |
+| `q_wave_*` | Q wave detection parameters | online |
+| `s_wave_*` | S wave detection parameters | online |
+| `p_wave_*` | P wave detection parameters | online |
+| `t_wave_*` | T wave detection parameters | online |
+| `detection_window_size` | Detection window size (seconds) | offline |
+| `overlap_window_size` | Overlap window size (seconds) | offline |
 
-### 在线检测器
+### Online Detector
 
-[online.py](online.py) 包含实时 ECG 波形检测的核心实现。
+[online.py](online.py) contains the core implementation of real-time ECG waveform detection.
 
-#### RealTimeECGDetector 类
+#### RealTimeECGDetector Class
 
-基于 Pan-Tomkins 算法的实时 ECG 波形检测器。
+A real-time ECG waveform detector based on the Pan-Tomkins algorithm.
 
 ```python
 class RealTimeECGDetector:
     def __init__(self, signal_name="MLII"):
-        # 初始化检测器，自动从 signal_params.json 加载参数
+        # Initialize detector, automatically loads parameters from signal_params.json
         ...
 ```
 
-#### BlueToothCollector 类
+#### BlueToothCollector Class
 
-蓝牙数据采集器，负责与 BLE 设备通信。
+Bluetooth data collector responsible for communicating with BLE devices.
 
 ```python
 class BlueToothCollector:
     def __init__(self, device_param, qrs_detector):
-        # 初始化蓝牙采集器
+        # Initialize Bluetooth collector
         ...
 
     async def start_collection(self):
-        # 启动数据采集
+        # Start data acquisition
         ...
 ```
 
-### 离线检测器
+### Offline Detector
 
-[offline.py](offline.py) 包含离线文件分析的实现。
+[offline.py](offline.py) contains the implementation of offline file analysis.
 
-#### PanTomkinsQRSDetectorOffline 类
+#### PanTomkinsQRSDetectorOffline Class
 
-基于 Pan-Tomkins 算法的离线 QRS 波检测器。
+An offline QRS wave detector based on the Pan-Tomkins algorithm.
 
 ```python
 class PanTomkinsQRSDetectorOffline:
     def __init__(self, signal_name="MLII"):
-        # 初始化检测器，采样频率固定为 360 Hz
+        # Initialize detector, sampling frequency fixed at 360 Hz
         ...
 
     def detect_qrs(self, signal_data):
-        # 检测 QRS 波
+        # Detect QRS waves
         ...
 ```
 
 ---
 
-## 算法原理
+## Algorithm Principles
 
-### Pan-Tomkins 算法详解
+### Pan-Tomkins Algorithm Details
 
-本项目采用改进的 Pan-Tomkins 算法，这是 QRS 波检测的经典方法。
+This project uses an improved Pan-Tomkins algorithm, a classic method for QRS wave detection.
 
-#### 算法步骤
+#### Algorithm Steps
 
-**1. 带通滤波**（1-50 Hz 可调）
-   - 去除基线漂移（< 5 Hz）
-   - 滤除高频噪声（> 15-50 Hz）
-   - 使用 Butterworth 滤波器
-   - 原始信号与滤波信号加权组合
+**1. Bandpass Filtering** (1-50 Hz adjustable)
+   - Remove baseline drift (< 5 Hz)
+   - Filter high-frequency noise (> 15-50 Hz)
+   - Use Butterworth filter
+   - Weighted combination of original and filtered signals
 
-**2. 微分处理**
-   - 5 点中心差分公式
-   - 突出 QRS 波的高斜率特性
-   - 公式：`f'(x) ≈ (f(x-2h) - 8f(x-h) + 8f(x+h) - f(x+2h)) / (12h)`
+**2. Differentiation**
+   - 5-point central difference formula
+   - Highlight high slope characteristics of QRS waves
+   - Formula: `f'(x) ≈ (f(x-2h) - 8f(x-h) + 8f(x+h) - f(x+2h)) / (12h)`
 
-**3. 平方运算**
+**3. Squaring**
    - `y = x²`
-   - 使所有值为正
-   - 放大高斜率点
+   - Make all values positive
+   - Amplify high slope points
 
-**4. 移动窗口积分**
-   - 窗口大小：100 ms
-   - 平滑信号
-   - 提取 QRS 波特征
+**4. Moving Window Integration**
+   - Window size: 100 ms
+   - Smooth signal
+   - Extract QRS wave features
 
-**5. 自适应阈值检测**
-   - 滑动窗口：约3秒
-   - 动态阈值：使用指数移动平均（EMA）平滑
-   - 不应期：200-500ms（避免重复检测）
+**5. Adaptive Threshold Detection**
+   - Sliding window: approximately 3 seconds
+   - Dynamic threshold: smoothed using Exponential Moving Average (EMA)
+   - Refractory period: 200-500ms (avoid duplicate detection)
 
-**6. 相位延迟补偿**
-   - 补偿滤波和积分引入的延迟
-   - 在补偿位置附近搜索真实峰值
+**6. Phase Delay Compensation**
+   - Compensate for delay introduced by filtering and integration
+   - Search for true peak near compensation position
 
-#### 关键改进
+#### Key Improvements
 
-- **导联自适应**：根据不同导联特性调整参数
-- **加权组合**：原始信号与滤波信号加权组合
-- **滑动窗口**：适应信号变化的动态阈值
-- **EMA 平滑**：避免阈值突变
-- **不应期保护**：避免同一 QRS 波被重复检测
-- **相位延迟补偿**：提高定位精度
+- **Lead Adaptive**: Adjust parameters based on different lead characteristics
+- **Weighted Combination**: Weighted combination of original and filtered signals
+- **Sliding Window**: Dynamic threshold that adapts to signal changes
+- **EMA Smoothing**: Avoid sudden threshold changes
+- **Refractory Period Protection**: Avoid repeated detection of the same QRS wave
+- **Phase Delay Compensation**: Improve positioning accuracy
 
 ---
 
-### 关键参数优化
+### Key Parameter Optimization
 
-不同导联使用不同的优化参数：
+Different leads use different optimized parameters:
 
-| 导联类型 | 低频截止 (Hz) | 高频截止 (Hz) | 积分窗口 (s) | 不应期 (s) | 阈值系数 |
+| Lead Type | Low Cutoff (Hz) | High Cutoff (Hz) | Integration Window (s) | Refractory Period (s) | Threshold Factor |
 |:---------|:-------------|:-------------|:-------------|:-----------|:---------|
 | V1       | 1            | 50.0         | 0.100        | 0.20       | 1.2      |
 | V2       | 3            | 30.0         | 0.100        | 0.20       | 1.3      |
@@ -466,484 +466,484 @@ class PanTomkinsQRSDetectorOffline:
 | MLII     | 5            | 15.0         | 0.100        | 0.50       | 1.4      |
 | MLIII    | 5            | 15.0         | 0.100        | 0.20       | 1.4      |
 | aVR/aVL/aVF | 5         | 15.0         | 0.100        | 0.20       | 1.4      |
-| 其他     | 5            | 15.0         | 0.100        | 0.20       | 1.4      |
+| Others   | 5            | 15.0         | 0.100        | 0.20       | 1.4      |
 
-这些参数经过针对不同导联特性的实验优化，确保在各种信号条件下都能获得良好的检测效果。
-
----
-
-### 完整 PQRST 波检测
-
-本系统不仅检测 QRS 波，还支持完整的 PQRST 波检测：
-
-#### R 峰检测
-
-- 基于 Pan-Tomkins 算法检测
-- 自适应阈值 + EMA 平滑
-- 不应期保护避免重复检测
-
-#### Q 波检测（R峰前的负向波）
-
-- 搜索窗口：R峰前10-80ms
-- 检测条件：幅值明显低于R峰（< 70%）
-- 最小幅值差：0.01 mV
-
-#### S 波检测（R峰后的负向波）
-
-- 搜索窗口：R峰后10-100ms
-- 检测条件：幅值明显低于R峰（< 70%）
-- 最小幅值差：0.01 mV
-
-#### P 波检测（心房去极化波）
-
-- 搜索窗口：R峰前40-200ms
-- 检测条件：正向小波，幅值远小于R峰（< 25%）
-- 最小幅值：0.02 mV
-- 最大宽度：120ms
-
-#### T 波检测（心室复极化波）
-
-- 搜索窗口：R峰后150-400ms
-- 检测条件：正向宽波，幅值小于R峰（< 60%）
-- 最小幅值：0.05 mV
-- 最大宽度：200ms
+These parameters are experimentally optimized for different lead characteristics to ensure good detection results under various signal conditions.
 
 ---
 
-### 其他算法
+### Complete PQRST Wave Detection
 
-#### 希尔伯特变换算法
+This system not only detects QRS waves but also supports complete PQRST wave detection:
 
-- 利用希尔伯特变换提取信号包络
-- 对噪声更鲁棒
-- 适用于低信噪比信号
+#### R Peak Detection
 
-详见 [tradition/hilbert_qrs.py](tradition/hilbert_qrs.py)
+- Based on Pan-Tomkins algorithm detection
+- Adaptive threshold + EMA smoothing
+- Refractory period protection to avoid duplicate detection
 
-#### 综合ECG特征点检测
+#### Q Wave Detection (negative wave before R peak)
 
-- 完整的 P、Q、R、S、T 波检测
-- 支持波起止点检测
-- 适用于完整ECG分析
+- Search window: 10-80ms before R peak
+- Detection condition: amplitude significantly lower than R peak (< 70%)
+- Minimum amplitude difference: 0.01 mV
 
-详见 [tradition/comprehensive_ecg_detector.py](tradition/comprehensive_ecg_detector.py)
+#### S Wave Detection (negative wave after R peak)
 
-#### 深度学习方法
+- Search window: 10-100ms after R peak
+- Detection condition: amplitude significantly lower than R peak (< 70%)
+- Minimum amplitude difference: 0.01 mV
 
-- **CNN**：卷积神经网络自动提取特征
-- **RNN/LSTM**：循环网络处理时序信号
-- **Transformer**：注意力机制模型
+#### P Wave Detection (atrial depolarization wave)
 
-详见 [ecg_deepl_method/](ecg_deepl_method/)
+- Search window: 40-200ms before R peak
+- Detection condition: positive small wave, amplitude much smaller than R peak (< 25%)
+- Minimum amplitude: 0.02 mV
+- Maximum width: 120ms
+
+#### T Wave Detection (ventricular repolarization wave)
+
+- Search window: 150-400ms after R peak
+- Detection condition: positive wide wave, amplitude smaller than R peak (< 60%)
+- Minimum amplitude: 0.05 mV
+- Maximum width: 200ms
 
 ---
 
-### 设备配置指南
+### Other Algorithms
 
-#### 添加新设备
+#### Hilbert Transform Algorithm
 
-在 [online.py](online.py) 中添加新的设备配置：
+- Uses Hilbert transform to extract signal envelope
+- More robust to noise
+- Suitable for low SNR signals
+
+See [tradition/hilbert_qrs.py](tradition/hilbert_qrs.py)
+
+#### Comprehensive ECG Feature Point Detection
+
+- Complete P, Q, R, S, T wave detection
+- Supports wave onset and offset detection
+- Suitable for complete ECG analysis
+
+See [tradition/comprehensive_ecg_detector.py](tradition/comprehensive_ecg_detector.py)
+
+#### Deep Learning Methods
+
+- **CNN**: Convolutional neural networks for automatic feature extraction
+- **RNN/LSTM**: Recurrent networks for processing time series signals
+- **Transformer**: Attention mechanism models
+
+See [ecg_deepl_method/](ecg_deepl_method/)
+
+---
+
+### Device Configuration Guide
+
+#### Adding New Devices
+
+Add new device configuration in [online.py](online.py):
 
 ```python
 DEVICE_NAME = "YOUR_DEVICE_NAME"
 if DEVICE_NAME == "YOUR_DEVICE_NAME":
     device_param = {
         "name": DEVICE_NAME,
-        "address": "XX:XX:XX:XX:XX:XX",  # 替换为实际 MAC 地址
+        "address": "XX:XX:XX:XX:XX:XX",  # Replace with actual MAC address
         "service_uuid": "YOUR_SERVICE_UUID",
         "rx_uuid": "YOUR_RX_UUID",
         "tx_uuid": "YOUR_TX_UUID",
     }
 ```
 
-#### 获取设备信息
+#### Getting Device Information
 
-使用 [ble_test.py](ble_test.py) 扫描并获取设备信息：
+Use [ble_test.py](ble_test.py) to scan and get device information:
 
 ```python
-# 设置 ble_test.py 中的标志位
+# Set flag in ble_test.py
 TEST_SCAN_DEVICES = 1
 
-# 运行获取设备列表
+# Run to get device list
 python ble_test.py
 ```
 
-#### 设备匹配策略
+#### Device Matching Strategy
 
-程序按以下优先级匹配设备：
+The program matches devices in the following priority order:
 
-1. **MAC 地址匹配**（最可靠）
-2. **设备名称匹配**
-3. **服务 UUID 匹配**
-
----
-
-## 辅助模块
-
-### qrs_detector 参考实现
-
-QRS 检测器的参考实现，提供另一种实现思路和代码组织方式。
-
-- **[QRSDetectorOffline.py](qrs_detector/QRSDetectorOffline.py)**：离线检测器实现
-- **[QRSDetectorOnline.py](qrs_detector/QRSDetectorOnline.py)**：在线检测器实现
-- **[README.md](qrs_detector/README.md)**：详细的模块文档
+1. **MAC Address Matching** (most reliable)
+2. **Device Name Matching**
+3. **Service UUID Matching**
 
 ---
 
-### tradition 传统算法集合
+## Auxiliary Modules
 
-传统 ECG 算法集合，包含多种经典算法实现：
+### qrs_detector Reference Implementation
 
-#### 核心算法
+Reference implementation of the QRS detector, providing an alternative implementation approach and code organization.
 
-- **[pan_tomkins_qrs.py](tradition/pan_tomkins_qrs.py)**：完整的 Pan-Tomkins 算法实现
-- **[pan_tomkins_qrs_single.py](tradition/pan_tomkins_qrs_single.py)**：单导联优化版本
-- **[hilbert_qrs.py](tradition/hilbert_qrs.py)**：基于希尔伯特变换的 QRS 检测
-- **[comprehensive_ecg_detector.py](tradition/comprehensive_ecg_detector.py)**：综合 ECG 特征点检测（P-QRS-T）
-- **[ecg_full_analysis.py](tradition/ecg_full_analysis.py)**：完整 ECG 分析系统
+- **[QRSDetectorOffline.py](qrs_detector/QRSDetectorOffline.py)**: Offline detector implementation
+- **[QRSDetectorOnline.py](qrs_detector/QRSDetectorOnline.py)**: Online detector implementation
+- **[README.md](qrs_detector/README.md)**: Detailed module documentation
 
-#### 信号处理工具
+---
 
-- **[Filter.py](tradition/Filter.py)**：基础滤波器（IIR、FIR）
-- **[kalman.py](tradition/kalman.py)**：卡尔曼滤波器实现
-- **[ArrhythmiaFilter.py](tradition/ArrhythmiaFilter.py)**：心律失常过滤算法
-- **[iir.py](tradition/iir.py)**：IIR 滤波器实验
-- **[fir.py](tradition/fir.py)**：FIR 滤波器实验
-- **[transform_ecg.py](tradition/transform_ecg.py)**：ECG 信号变换
+### tradition Traditional Algorithm Collection
 
-#### 算法分析文档
+A collection of traditional ECG algorithms, including various classic algorithm implementations:
+
+#### Core Algorithms
+
+- **[pan_tomkins_qrs.py](tradition/pan_tomkins_qrs.py)**: Complete Pan-Tomkins algorithm implementation
+- **[pan_tomkins_qrs_single.py](tradition/pan_tomkins_qrs_single.py)**: Single-lead optimized version
+- **[hilbert_qrs.py](tradition/hilbert_qrs.py)**: Hilbert transform-based QRS detection
+- **[comprehensive_ecg_detector.py](tradition/comprehensive_ecg_detector.py)**: Comprehensive ECG feature point detection (P-QRS-T)
+- **[ecg_full_analysis.py](tradition/ecg_full_analysis.py)**: Complete ECG analysis system
+
+#### Signal Processing Tools
+
+- **[Filter.py](tradition/Filter.py)**: Basic filters (IIR, FIR)
+- **[kalman.py](tradition/kalman.py)**: Kalman filter implementation
+- **[ArrhythmiaFilter.py](tradition/ArrhythmiaFilter.py)**: Arrhythmia filtering algorithm
+- **[iir.py](tradition/iir.py)**: IIR filter experiments
+- **[fir.py](tradition/fir.py)**: FIR filter experiments
+- **[transform_ecg.py](tradition/transform_ecg.py)**: ECG signal transformation
+
+#### Algorithm Analysis Documents
 
 - `基础Pan-Tomkins QRS检测算法详细分析.md`
 - `希尔伯特QRS检测算法详细分析.md`
 - `综合ECG特征点检测算法详细分析.md`
 - `QRS检测优化方案.md`
 
-#### 运行传统算法
+#### Running Traditional Algorithms
 
 ```bash
-# Pan-Tomkins 算法
+# Pan-Tomkins algorithm
 cd tradition
 python pan_tomkins_qrs.py
 
-# 希尔伯特变换算法
+# Hilbert transform algorithm
 python hilbert_qrs.py
 
-# 综合特征点检测
+# Comprehensive feature point detection
 python comprehensive_ecg_detector.py
 ```
 
 ---
 
-### ecg_deepl_method 深度学习方法
+### ecg_deepl_method Deep Learning Methods
 
-深度学习方法探索，包含多种实验和实现：
+Deep learning method exploration, including various experiments and implementations:
 
-- **ecg_cnn_1/**：基于 CNN 的 ECG 分类
-- **ecg-experiment-1/**：深度学习实验 1
-  - **model.py**：三种CNN模型（Model_1: 4层CNN, Model_2: 残差网络, Model_3: 注意力机制）
-  - **train.py**：模型训练
-  - **predict.py**：模型预测
-  - **load.py**：数据加载
-- **ecg-master/**：主实验代码
-- **Dataset_Study/**：数据集研究与分析
-- **[show_data.py](ecg_deepl_method/show_data.py)**：数据可视化工具
-- **[count_records.py](ecg_deepl_method/count_records.py)**：数据集统计工具
+- **ecg_cnn_1/**: CNN-based ECG classification
+- **ecg-experiment-1/**: Deep learning experiment 1
+  - **model.py**: Three CNN models (Model_1: 4-layer CNN, Model_2: Residual network, Model_3: Attention mechanism)
+  - **train.py**: Model training
+  - **predict.py**: Model prediction
+  - **load.py**: Data loading
+- **ecg-master/**: Main experiment code
+- **Dataset_Study/**: Dataset research and analysis
+- **[show_data.py](ecg_deepl_method/show_data.py)**: Data visualization tool
+- **[count_records.py](ecg_deepl_method/count_records.py)**: Dataset statistics tool
 
-#### 探索深度学习方法
+#### Exploring Deep Learning Methods
 
 ```bash
 cd ecg_deepl_method
 
-# 查看数据集
+# View dataset
 python show_data.py
 
-# 统计记录数量
+# Count records
 python count_records.py
 ```
 
 ---
 
-### Information 技术文档
+### Information Technical Documentation
 
-技术文档、标准规范和学习资料：
+Technical documentation, standards, and learning materials:
 
-#### 核心文档
+#### Core Documents
 
-- **[connect.md](Information/connect.md)**：12 导联 ECG 电极配置说明
-  - 威尔逊中心端原理
-  - 各导联测量方法
-  - 电极位置说明
+- **[connect.md](Information/connect.md)**: 12-lead ECG electrode configuration instructions
+  - Wilson central terminal principles
+  - Each lead measurement method
+  - Electrode position description
 
-- **[documents.md](Information/documents.md)**：QRS 波群检测标准（YY 9706.247-2021）
-  - 检测准确性要求
-  - 搏-搏比对方法
-  - 性能指标计算
+- **[documents.md](Information/documents.md)**: QRS wave complex detection standards (YY 9706.247-2021)
+  - Detection accuracy requirements
+  - Beat-to-beat comparison method
+  - Performance metric calculation
 
-- **[MIT-BIH.md](Information/MIT-BIH.md)**：MIT-BIH 数据库说明
-- **[MIT-BIH数据库.md](Information/MIT-BIH数据库.md)**：数据库详细说明
-- **[ECG learn.md](Information/ECG%20learn.md)**：ECG 学习笔记
+- **[MIT-BIH.md](Information/MIT-BIH.md)**: MIT-BIH database description
+- **[MIT-BIH数据库.md](Information/MIT-BIH数据库.md)**: Database detailed description
+- **[ECG learn.md](Information/ECG%20learn.md)**: ECG learning notes
 
-#### 技术论文
+#### Technical Papers
 
-- `心电信号识别分类算法综述.pdf`：算法综述
-- `QRS 波群检测算法测试方案.pdf`：测试方案
-- `YY 9706.247-2021医用电气设备标准.pdf`：行业标准
-- `1707.01836v1.pdf`：深度学习相关论文
-- `applsci-13-04964-v2.pdf`：应用科学论文
-- `Classification_of_ECG_signals_using_machine_learning_techniques_A_survey.pdf`：机器学习分类综述
-
----
-
-## 标准与测试
-
-### YY 9706.247-2021 标准
-
-动态心电图系统的基本安全和基本性能专用要求，对 QRS 波检测有明确规定：
-
-#### 核心要求
-
-**1. 检测准确性**
-   - 敏感度（Se）：正确检测的 QRS 波数占总参考 QRS 波数的比例
-   - 阳性预测值（+P）：正确检测的 QRS 波数占检测总 QRS 波数的比例
-   - 标准：总统计敏感度/阳性预测值均 ≥ 95%
-
-**2. 测试数据库**
-   - **AHA**：80 份记录（含室性心律失常）
-   - **MIT-BIH**：48 份记录（含常见/罕见心律失常）
-   - **NST**：12 份记录（含噪声抑制测试）
-
-**3. 搏-搏比对**
-   - 匹配窗口：≤ 150 ms
-   - 逐一心搏匹配验证
-   - 漏检（FN）和假阳性（FP）均计入统计
-
-#### 性能指标
-
-- QRS 敏感度（QRS Se）：`QTP / (QTP + QFN)`
-- QRS 阳性预测值（QRS +P）：`QTP / (QTP + QFP)`
-
-其中：
-- `QTP`：正确检测的 QRS 波总数
-- `QFN`：漏检的 QRS 波数
-- `QFP`：假阳性 QRS 波数
-
-详见：[Information/documents.md](Information/documents.md)、`YY 9706.247-2021医用电气设备 第2-47部分：动态心电图系统的基本安全和基本性能专用要求.pdf`
+- `心电信号识别分类算法综述.pdf`: Algorithm review
+- `QRS 波群检测算法测试方案.pdf`: Test plan
+- `YY 9706.247-2021医用电气设备标准.pdf`: Industry standard
+- `1707.01836v1.pdf`: Deep learning related paper
+- `applsci-13-04964-v2.pdf`: Applied science paper
+- `Classification_of_ECG_signals_using_machine_learning_techniques_A_survey.pdf`: Machine learning classification review
 
 ---
 
-### MIT-BIH 数据库
+## Standards and Testing
 
-国际标准 ECG 数据库，包含 48 份半小时长的双通道 ECG 记录。
+### YY 9706.247-2021 Standard
 
-- **官网**：https://physionet.org/content/mitdb/
-- **采样频率**：360 Hz
-- **导联**：通常为 MLII 和 V1/V2/V5
-- **标注**：心脏病专家标注的 QRS 波位置和类型
+Specific requirements for basic safety and essential performance of dynamic ECG systems, with clear provisions for QRS wave detection:
 
-#### 获取 MIT-BIH 数据库
+#### Core Requirements
 
-1. 访问 https://physionet.org/content/mitdb/
-2. 下载完整数据库
-3. 修改 [offline.py](offline.py) 中的路径
+**1. Detection Accuracy**
+   - Sensitivity (Se): Ratio of correctly detected QRS waves to total reference QRS waves
+   - Positive Predictive Value (+P): Ratio of correctly detected QRS waves to total detected QRS waves
+   - Standard: Total statistical sensitivity/positive predictive value both ≥ 95%
 
-详见：[Information/MIT-BIH数据库.md](Information/MIT-BIH数据库.md)
+**2. Test Database**
+   - **AHA**: 80 records (including ventricular arrhythmias)
+   - **MIT-BIH**: 48 records (including common/rare arrhythmias)
+   - **NST**: 12 records (including noise suppression tests)
 
----
+**3. Beat-to-Beat Comparison**
+   - Matching window: ≤ 150 ms
+   - Beat-by-beat matching verification
+   - Both missed detections (FN) and false positives (FP) are counted in statistics
 
-## 技术栈
+#### Performance Metrics
 
-### 编程语言
+- QRS Sensitivity (QRS Se): `QTP / (QTP + QFN)`
+- QRS Positive Predictive Value (QRS +P): `QTP / (QTP + QFP)`
 
-- **Python 3.8+**：主要开发语言
+Where:
+- `QTP`: Total number of correctly detected QRS waves
+- `QFN`: Number of missed QRS waves
+- `QFP`: Number of false positive QRS waves
 
-### 核心库
-
-#### 信号处理
-
-- **NumPy**：数值计算
-- **SciPy**：科学计算（滤波、信号处理）
-- **WFDB**：PhysioNet 数据库读写
-
-#### 可视化
-
-- **Matplotlib**：实时绘图和数据可视化
-
-#### 蓝牙通信
-
-- **asyncio**：异步编程
-- **bleak**：跨平台 BLE 蓝牙库
-
-#### 深度学习（实验性）
-
-- **TensorFlow / Keras**：深度学习框架
-- **PyTorch**：深度学习框架
+See: [Information/documents.md](Information/documents.md), `YY 9706.247-2021医用电气设备 第2-47部分：动态心电图系统的基本安全和基本性能专用要求.pdf`
 
 ---
 
-## 常见问题
+### MIT-BIH Database
 
-### Q1: 无法找到蓝牙设备
+International standard ECG database containing 48 half-hour two-channel ECG records.
 
-**解决方案**：
+- **Website**: https://physionet.org/content/mitdb/
+- **Sampling Frequency**: 360 Hz
+- **Leads**: Typically MLII and V1/V2/V5
+- **Annotations**: QRS wave positions and types annotated by cardiologists
 
-1. 确保设备已开启并处于可发现模式
-2. 检查设备 MAC 地址是否正确
-3. 增加扫描超时时间：
+#### Obtaining MIT-BIH Database
+
+1. Visit https://physionet.org/content/mitdb/
+2. Download complete database
+3. Modify path in [offline.py](offline.py)
+
+See: [Information/MIT-BIH数据库.md](Information/MIT-BIH数据库.md)
+
+---
+
+## Tech Stack
+
+### Programming Languages
+
+- **Python 3.8+**: Main development language
+
+### Core Libraries
+
+#### Signal Processing
+
+- **NumPy**: Numerical computing
+- **SciPy**: Scientific computing (filtering, signal processing)
+- **WFDB**: PhysioNet database reading and writing
+
+#### Visualization
+
+- **Matplotlib**: Real-time plotting and data visualization
+
+#### Bluetooth Communication
+
+- **asyncio**: Asynchronous programming
+- **bleak**: Cross-platform BLE Bluetooth library
+
+#### Deep Learning (Experimental)
+
+- **TensorFlow / Keras**: Deep learning framework
+- **PyTorch**: Deep learning framework
+
+---
+
+## FAQ
+
+### Q1: Cannot find Bluetooth device
+
+**Solutions**:
+
+1. Ensure device is powered on and in discoverable mode
+2. Check if device MAC address is correct
+3. Increase scan timeout:
 
 ```python
-all_devices = await BleakScanner.discover(timeout=10.0)  # 增加到 10 秒
+all_devices = await BleakScanner.discover(timeout=10.0)  # Increase to 10 seconds
 ```
 
-4. 检查蓝牙适配器是否支持 BLE
+4. Check if Bluetooth adapter supports BLE
 
 ---
 
-### Q2: 连接后立即断开
+### Q2: Disconnects immediately after connection
 
-**可能原因**：
-- 设备已被其他程序连接
-- 设备不支持同时连接多个客户端
-- 蓝牙信号不稳定
+**Possible causes**:
+- Device is already connected by another program
+- Device does not support multiple simultaneous client connections
+- Unstable Bluetooth signal
 
-**解决方案**：
-- 关闭其他可能连接该设备的程序
-- 靠近设备以增强信号
-- 重启蓝牙适配器
-
----
-
-### Q3: 检测到的 QRS 波数量偏少
-
-**调整参数**：
-
-1. 降低阈值系数：
-
-```python
-'threshold_factor': 1.2  # 从 1.4 降低到 1.2
-```
-
-2. 调整带通滤波范围：
-
-```python
-'low': 3, 'high': 30.0  # 扩大通带范围
-```
+**Solutions**:
+- Close other programs that might connect to the device
+- Move closer to device to strengthen signal
+- Restart Bluetooth adapter
 
 ---
 
-### Q4: 检测到的 QRS 波数量过多（误检）
+### Q3: Too few QRS waves detected
 
-**调整参数**：
+**Adjust parameters**:
 
-1. 提高阈值系数：
+1. Lower threshold coefficient:
 
 ```python
-'threshold_factor': 1.6  # 从 1.4 提高到 1.6
+'threshold_factor': 1.2  # Lower from 1.4 to 1.2
 ```
 
-2. 增加不应期：
+2. Adjust bandpass filter range:
 
 ```python
-'refractory_period': 0.25  # 从 0.20 增加到 0.25 秒
-```
-
-3. 缩小带通滤波范围：
-
-```python
-'low': 5, 'high': 15.0  # 缩小通带范围
+'low': 3, 'high': 30.0  # Expand passband range
 ```
 
 ---
 
-### Q5: 实时显示卡顿
+### Q4: Too many QRS waves detected (false positives)
 
-**优化方案**：
+**Adjust parameters**:
 
-1. 减少绘图刷新频率：
+1. Increase threshold coefficient:
 
 ```python
-if len(self.signal) > 500 and sample_show_cnt % 10 == 0:  # 每10个样本更新一次
+'threshold_factor': 1.6  # Increase from 1.4 to 1.6
+```
+
+2. Increase refractory period:
+
+```python
+'refractory_period': 0.25  # Increase from 0.20 to 0.25 seconds
+```
+
+3. Narrow bandpass filter range:
+
+```python
+'low': 5, 'high': 15.0  # Narrow passband range
+```
+
+---
+
+### Q5: Real-time display lag
+
+**Optimization**:
+
+1. Reduce drawing refresh frequency:
+
+```python
+if len(self.signal) > 500 and sample_show_cnt % 10 == 0:  # Update every 10 samples
     peaks = self.detect_wave()
 ```
 
-2. 减小信号缓冲区大小：
+2. Reduce signal buffer size:
 
 ```python
-self.signal_len = 500  # 从 750 减少到 500
+self.signal_len = 500  # Reduce from 750 to 500
 ```
 
-3. 使用更高效的绘图库（如 PyQtGraph）
+3. Use more efficient plotting library (such as PyQtGraph)
 
 ---
 
-### Q6: 数据解析错误
+### Q6: Data parsing error
 
-**检查项目**：
+**Check items**:
 
-1. 确认设备使用的数据格式（小端/大端）
-2. 检查电压转换系数是否正确（单导联 0.288，12导联 0.318）
-3. 验证 CRC 校验算法
+1. Confirm the data format used by the device (little-endian/big-endian)
+2. Check if voltage conversion coefficient is correct (single-lead 0.288, 12-lead 0.318)
+3. Verify CRC checksum algorithm
 
 ---
 
-## 参考资料
+## References
 
-### 论文与文献
+### Papers and Literature
 
-1. Pan, J., & Tompkins, W. J. (1985). "A real-time QRS detection algorithm." *IEEE Transactions on Biomedical Engineering*. **Pan-Tomkins 算法的原始论文**
+1. Pan, J., & Tompkins, W. J. (1985). "A real-time QRS detection algorithm." *IEEE Transactions on Biomedical Engineering*. **Original paper of Pan-Tomkins algorithm**
 
-2. MIT-BIH Arrhythmia Database. https://physionet.org/content/mitdb/ **标准测试数据库**
+2. MIT-BIH Arrhythmia Database. https://physionet.org/content/mitdb/ **Standard test database**
 
 3. 心电信号识别分类算法综述. [Information/心电信号识别分类算法综述.pdf](Information/心电信号识别分类算法综述.pdf)
 
 4. QRS 波群检测算法测试方案. [Information/QRS 波群检测算法测试方案.pdf](Information/QRS%20波群检测算法测试方案.pdf)
 
-### 技术文档
+### Technical Documentation
 
-- **12 导联电极配置**：[Information/connect.md](Information/connect.md)
-- **QRS 检测标准**：[Information/documents.md](Information/documents.md)
-- **MIT-BIH 数据库说明**：[Information/MIT-BIH数据库.md](Information/MIT-BIH数据库.md)
-- **ECG 学习笔记**：[Information/ECG learn.md](Information/ECG%20learn.md)
+- **12-lead electrode configuration**: [Information/connect.md](Information/connect.md)
+- **QRS detection standards**: [Information/documents.md](Information/documents.md)
+- **MIT-BIH database description**: [Information/MIT-BIH数据库.md](Information/MIT-BIH数据库.md)
+- **ECG learning notes**: [Information/ECG learn.md](Information/ECG%20learn.md)
 
-### 相关项目
+### Related Projects
 
-- **核心检测模块**：[online.py](online.py)、[offline.py](offline.py)
-- **参数配置**：[signal_params.json](signal_params.json)、[signal_params.py](signal_params.py)
-- **蓝牙测试**：[ble_test.py](ble_test.py)
-- **qrs_detector**：参考实现 [qrs_detector/](qrs_detector/)
-- **传统算法**：[tradition/](tradition/)
-- **深度学习方法**：[ecg_deepl_method/](ecg_deepl_method/)
+- **Core detection modules**: [online.py](online.py), [offline.py](offline.py)
+- **Parameter configuration**: [signal_params.json](signal_params.json), [signal_params.py](signal_params.py)
+- **Bluetooth testing**: [ble_test.py](ble_test.py)
+- **qrs_detector**: Reference implementation [qrs_detector/](qrs_detector/)
+- **Traditional algorithms**: [tradition/](tradition/)
+- **Deep learning methods**: [ecg_deepl_method/](ecg_deepl_method/)
 
 ---
 
-## 开发计划
+## Development Plan
 
-### 已完成 ✅
+### Completed ✅
 
-- [x] Pan-Tomkins 算法实现（在线/离线）
-- [x] 蓝牙数据采集（BLE 通信）
-- [x] 实时可视化（5 子图）
-- [x] 多导联参数优化
-- [x] MIT-BIH 数据库支持
-- [x] 自适应阈值检测（EMA 平滑）
-- [x] 相位延迟补偿
-- [x] 完整 PQRST 波检测
-- [x] 传统算法实现（Pan-Tomkins、希尔伯特变换）
-- [x] 深度学习方法探索
-- [x] 完整的项目文档
-- [x] 参数配置系统重构（JSON + Python 模块）
-- [x] 蓝牙测试工具（ble_test.py）
+- [x] Pan-Tomkins algorithm implementation (online/offline)
+- [x] Bluetooth data acquisition (BLE communication)
+- [x] Real-time visualization (5 subplots)
+- [x] Multi-lead parameter optimization
+- [x] MIT-BIH database support
+- [x] Adaptive threshold detection (EMA smoothing)
+- [x] Phase delay compensation
+- [x] Complete PQRST wave detection
+- [x] Traditional algorithm implementation (Pan-Tomkins, Hilbert transform)
+- [x] Deep learning method exploration
+- [x] Complete project documentation
+- [x] Parameter configuration system refactoring (JSON + Python module)
+- [x] Bluetooth testing tool (ble_test.py)
 
-### 进行中 🚧
+### In Progress 🚧
 
-- [ ] 性能优化（实时显示流畅度）
-- [ ] 心律失常分类
-- [ ] 算法性能评估与优化
-- [ ] 单元测试完善
+- [ ] Performance optimization (real-time display smoothness)
+- [ ] Arrhythmia classification
+- [ ] Algorithm performance evaluation and optimization
+- [ ] Unit testing improvement
 
-### 计划中 📋
+### Planned 📋
 
-- [ ] 深度学习模型训练与部署
-- [ ] YY 9706.247-2021 标准合规性测试
-- [ ] 用户界面（GUI）
-- [ ] 数据导出与报告生成
-- [ ] 移动端适配
+- [ ] Deep learning model training and deployment
+- [ ] YY 9706.247-2021 standard compliance testing
+- [ ] User interface (GUI)
+- [ ] Data export and report generation
+- [ ] Mobile adaptation

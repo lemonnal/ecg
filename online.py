@@ -591,7 +591,7 @@ class RealTimeECGDetector:
             # 将新样本添加到deque中，自动淘汰旧数据
             self.signal.append(sample)
 
-            if len(self.signal) > 500 and sample_show_cnt % 20 == 0:
+            if len(self.signal) > 500 and sample_show_cnt % 10 == 0:
                 peaks = self.detect_wave()
                 print(f"R peaks: {peaks}")
                 print(f"Q waves: {self.q_waves}")
@@ -893,15 +893,7 @@ async def main():
     else:
         print(f"\n成功找到设备: {device.address}")
 
-    # 创建BleakClient客户端，连接后进行串口操作
-    async with BleakClient(device, disconnected_callback=Collector.handle_disconnect) as client:
-        # 发送开始监听指令
-        await client.start_notify(device_param["tx_uuid"], Collector.handle_rx)
-        print("Enable listening Callback Function")
-        # 发送开始采集指令
-        await Collector.start_collection(client, collect_enable=1, timestamp=0)
-        print("Enable Collector Callback Function")
-        # 持续接收数据的循环
+    # 创建BleakClient客户端，连接后进行串口操作-CCITT-FALSE
         try:
             print("开始持续接收数据")
             while True:

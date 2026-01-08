@@ -2,6 +2,7 @@
 /ecg_deepl_method
 /qrs_detector
 /tradition
+git_auto_commit.sh
 
 # ==================
 # IDE 配置
